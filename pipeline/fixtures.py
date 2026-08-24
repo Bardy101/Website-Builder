@@ -52,3 +52,25 @@ class FixturePlacesClient:
 
     def details(self, place_id: str):
         return self._by_id.get(place_id, {})
+
+    def available(self) -> list[tuple[str, str]]:
+        """The (niche, area) pairs this fixture actually covers.
+
+        A fixture is a handful of invented businesses, not the internet. Asking
+        it for a niche it doesn't hold returns nothing, which looks like a
+        broken tool unless we say what it does hold.
+        """
+        pairs = {
+            (p.get("_niche"), p.get("_area"))
+            for p in self.places
+            if p.get("_niche") and p.get("_area")
+        }
+        return sorted(pairs)
+
+    def covers(self, niche: str, area: str) -> bool:
+        pairs = self.available()
+        if not pairs:  # untagged fixture matches everything
+            return True
+        return any(
+            n.lower() == niche.lower() and a.lower() == area.lower() for n, a in pairs
+        )

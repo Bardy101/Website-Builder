@@ -79,6 +79,8 @@ def parse_args(argv=None):
         help="JSON fixture of Places responses; runs fully offline, no API key needed",
     )
     p.add_argument("--quiet", action="store_true")
+    # Set by run.py so the closing hint points at the menu, not a command line.
+    p.add_argument("--from-menu", action="store_true", help=argparse.SUPPRESS)
     return p.parse_args(argv)
 
 
@@ -130,6 +132,20 @@ def main(argv=None) -> int:
     weights = Weights.load(args.weights)
     places, checker, ch = build_clients(args, config)
     say = (lambda _m: None) if args.quiet else (lambda m: print(m, flush=True))
+
+    # The demo fixture holds a handful of invented businesses, not the whole
+    # internet. Asking it for a niche it doesn't cover returns nothing, which
+    # reads as a broken tool unless we say plainly what it does cover.
+    if args.fixture and args.niche and args.area and not places.covers(args.niche, args.area):
+        covered = places.available()
+        raise SystemExit(
+            f"\nThe demo fixture has no '{args.niche}' in '{args.area}'.\n\n"
+            "It contains only invented sample businesses, so it can only answer for:\n"
+            + "".join(f"    --niche {n} --area {a}\n" for n, a in covered)
+            + "\nTo search for real businesses in any niche or town, drop --fixture\n"
+            "and set GOOGLE_PLACES_API_KEY in your .env file:\n\n"
+            f"    python find.py --niche {args.niche} --area \"{args.area}\"\n"
+        )
 
     if args.batch_config:
         cfg = load_batch_config(args.batch_config)
@@ -193,9 +209,24 @@ def main(argv=None) -> int:
                 f"  {str(row['lead_score']):>4}  {row['name'][:38]:<38} "
                 f"{row['site_verdict']:<12} {row['town']}"
             )
+    if not result.rows:
+        say("")
+        say("No businesses matched. Things worth checking:")
+        say("  - Is the niche a term Google Places would recognise? Try the")
+        say("    words a customer would search: 'plumber', not 'plumbing services'.")
+        say("  - Is the town spelled as Google knows it? '\"Hitchin, Hertfordshire\"'")
+        say("    is safer than 'Hitchin'.")
+        if result.excluded:
+            say(f"  - {len(result.excluded)} were found but excluded "
+                "(chain or not operational).")
+        return 1
+
     say("")
-    say("Next: open the CSV, cull to 10-15, then run ./cull.py --batch "
-        f"{batch.path}")
+    if args.from_menu:
+        say("Next: cull this to 10-15 with 'Review a shortlist' on the menu.")
+    else:
+        say("Next: open the CSV, cull to 10-15, then run ./cull.py --batch "
+            f"{batch.path}")
     return 0
 
 

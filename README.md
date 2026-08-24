@@ -55,8 +55,10 @@ cd $HOME\Downloads
 git clone -b claude/tool-build-markdown-spec-vnr7ss https://github.com/Bardy101/Website-Builder.git
 cd Website-Builder
 py -m pip install -r requirements.txt
-py find.py --niche physiotherapist --area Hitchin --fixture examples\sample_fixture.json
 ```
+
+Then **double-click `run.bat`** in the project folder. That's the whole
+workflow — no command line after setup.
 
 Use `py` (the Python launcher) rather than the full
 `C:\Program Files\Python314\python.exe` path — shorter, and it picks the
@@ -68,6 +70,33 @@ Paths in the examples below use forward slashes; PowerShell accepts either.
 
 ---
 
+## The easy way: the menu
+
+**Double-click `run.bat`** (Windows) or **`run.command`** (macOS). Or type
+`python run.py`. You get a menu and never touch a flag:
+
+```
+============================================================
+  Postal Outreach Pipeline — prospect finder
+============================================================
+
+  1  Find prospects
+  2  Review a shortlist (cull to your 10-15)
+  3  Tune the scoring from your decisions
+  4  Open a shortlist in your spreadsheet app
+  5  Check setup (keys, dependencies)
+  q  Quit
+```
+
+It asks for the niche and town in plain English, runs the search, and offers
+to open the result straight in Excel. Option **5** is the one to try first —
+it tells you which keys are set and what's missing.
+
+Everything below is the same functionality driven from the command line, if
+you'd rather script it.
+
+---
+
 ## Try it right now, with no API keys
 
 A fixture of invented businesses runs the whole stage offline:
@@ -75,6 +104,11 @@ A fixture of invented businesses runs the whole stage offline:
 ```bash
 ./find.py --niche physiotherapist --area Hitchin --fixture examples/sample_fixture.json
 ```
+
+> **The demo data covers physiotherapists in Hitchin only.** It's six invented
+> businesses, not a copy of the internet — asking it for a plumber correctly
+> finds nothing, and it will say so. To search any niche or town you need a
+> Places API key and no `--fixture` flag.
 
 ```
     55  Bancroft Physio Rooms                  none         Hitchin
@@ -235,7 +269,7 @@ batches/2026-09-01_physios_hitchin/
 ## Development
 
 ```bash
-python3 -m unittest discover -s tests -t .      # 75 tests, no network needed
+python3 -m unittest discover -s tests -t .      # 83 tests, no network needed
 ```
 
 Every network client takes an injectable transport, so the whole pipeline is
