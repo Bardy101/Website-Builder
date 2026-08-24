@@ -86,8 +86,19 @@ def prompt_decisions(rows: list[dict], keep_target: int) -> dict[str, str]:
         print(
             f"    {row['rating'] or '-'}* from {row['review_count'] or 0} reviews"
             f"  |  last review: {row['recent_review_date'] or 'unknown'}"
-            f"  |  owner: {row['owner_name'] or '-'} ({row['company_type']})"
         )
+        check = row.get("contact_check", "")
+        marker = "  <-- check this" if check in ("differ", "likely_same", "site_only") else ""
+        print(
+            f"    address to: {row.get('address_to') or 'FAO the Owner'}"
+            f"  [{check or 'n/a'}]{marker}"
+        )
+        if row.get("owner_name") or row.get("site_contact"):
+            print(
+                f"      register: {row.get('owner_name') or '-'}"
+                f"  ({row['company_type']})"
+                f"   |   website: {row.get('site_contact') or '-'}"
+            )
         print(f"    maps: {row['maps_url']}")
         if row["website_url"]:
             print(f"    site: {row['website_url']}")

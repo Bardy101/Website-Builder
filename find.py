@@ -32,6 +32,7 @@ try:
     from pipeline.places import PlacesClient
     from pipeline.scoring import Weights
     from pipeline.site_checks import SiteChecker
+    from pipeline.site_contacts import SiteContactFinder
     from pipeline.storage import Batch
 except ImportError as exc:
     if "pipeline" not in str(exc):
@@ -75,6 +76,11 @@ def parse_args(argv=None):
         help="skip the Companies House owner lookup",
     )
     p.add_argument(
+        "--no-site-contacts",
+        action="store_true",
+        help="skip reading the business's own About page for a named contact",
+    )
+    p.add_argument(
         "--fixture",
         help="JSON fixture of Places responses; runs fully offline, no API key needed",
     )
@@ -103,7 +109,7 @@ def build_clients(args, config: Config):
         places = FixturePlacesClient.from_file(args.fixture)
         # Offline means no live site checks or Companies House calls; the
         # fixture may still carry site_score values of its own.
-        return places, None, None
+        return places, None, None, None
 
     places = PlacesClient(api_key=config.google_places_api_key, cache=cache)
     checker = (
@@ -120,7 +126,8 @@ def build_clients(args, config: Config):
         if args.no_owner_lookup or not config.companies_house_api_key
         else CompaniesHouseClient(api_key=config.companies_house_api_key, cache=cache)
     )
-    return places, checker, ch
+    contacts = None if args.no_site_contacts else SiteContactFinder(cache=cache)
+    return places, checker, ch, contacts
 
 
 def main(argv=None) -> int:
@@ -130,7 +137,7 @@ def main(argv=None) -> int:
 
     config = Config.from_env()
     weights = Weights.load(args.weights)
-    places, checker, ch = build_clients(args, config)
+    places, checker, ch, contacts = build_clients(args, config)
     say = (lambda _m: None) if args.quiet else (lambda m: print(m, flush=True))
 
     # The demo fixture holds a handful of invented businesses, not the whole
@@ -167,6 +174,7 @@ def main(argv=None) -> int:
                     places_client=places,
                     site_checker=checker,
                     companies_house=ch,
+                    site_contacts=contacts,
                     weights=weights,
                     radius_m=pair.get("radius", radius),
                     top=top_each,
@@ -187,6 +195,7 @@ def main(argv=None) -> int:
             places_client=places,
             site_checker=checker,
             companies_house=ch,
+            site_contacts=contacts,
             weights=weights,
             radius_m=args.radius,
             top=args.top,
@@ -220,6 +229,17 @@ def main(argv=None) -> int:
             say(f"  - {len(result.excluded)} were found but excluded "
                 "(chain or not operational).")
         return 1
+
+    needs_human = [
+        b for b in result.businesses
+        if (b.get("addressee") or {}).get("needs_human")
+    ]
+    if needs_human:
+        say("")
+        say(f"{len(needs_human)} row(s) need you to pick who to address:")
+        for b in needs_human[:10]:
+            say(f"  {b['name']}")
+            say(f"    {b['addressee']['note']}")
 
     stats = getattr(places, "stats", None)
     if stats and not args.fixture:

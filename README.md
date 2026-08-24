@@ -358,6 +358,71 @@ Unknown is never silently rated `fine`. If a field can't be established it stays
 
 ---
 
+## Who gets the letter?
+
+Two sources disagree more often than you'd expect:
+
+- **Companies House** tells you who *legally owns* the business.
+- **The website** tells you who *actually runs it day to day*.
+
+A registered director may be a spouse, a dormant co-founder, or an
+accountant's nominee. The practice manager named on the site with their own
+email address may be the person who'd actually action a website conversation.
+Address the wrong one and the letter reads as careless.
+
+So the tool gathers both (spec section 5's lookup order: Companies House,
+then the business's own About page) and reconciles them into a
+`contact_check` verdict:
+
+| Verdict | Means | Needs you? |
+|---|---|---|
+| `agree` | Both sources name the same person | No |
+| `likely_same` | Same surname, different forename — often a middle name or nickname | A glance |
+| `differ` | Genuinely two different people | **Yes** |
+| `owner_only` | Director found, nobody named on the site | No |
+| `site_only` | Named on the site, no company match — often a sole trader | A glance |
+| `none` | Nothing found; falls back to "FAO the Owner / Practice Manager" | No |
+
+`likely_same` exists because of a real case: Companies House filed a director
+as `MADSEN, John Jay` while the website named "Jay". One person, two renderings.
+Middle names are kept from the register specifically so this can be spotted —
+matching on the display name alone would have called it a conflict.
+
+**On a `differ`, the tool defaults to the website's person** — they run the
+place and a website is their problem to solve — but flags the row so you
+decide. A run tells you which rows need you:
+
+```
+2 row(s) need you to pick who to address:
+  MVMNT Physio & Health Hitchin
+    Website names Jay Patel (practice manager); register names John Madsen
+    as director. Different people — decide who actually owns the website
+    decision.
+```
+
+The cull shows both sources side by side, so the choice takes seconds:
+
+```
+    address to: Jay Madsen  [likely_same]  <-- check this
+      register: John Madsen  (ltd)   |   website: Jay Madsen (practice manager)
+```
+
+**Everything from the website is confidence `low`** — it's pattern matching
+over marketing copy, not a register. It's offered to you, never silently
+trusted, and if nothing is found the salutation stays "FAO the Owner /
+Practice Manager" rather than guessing.
+
+Reading the About page respects `robots.txt`, fetches at most four pages per
+business, identifies itself honestly in the user agent, and caches for 30 days
+like everything else. Disable it with `--no-site-contacts`.
+
+> **The `contact_email` column is a signal about who to address, not a mailing
+> list.** A personal mailbox (`jay@`) tells you who runs things in a way
+> `info@` doesn't. Emailing it uninvited is not permitted under the spec's
+> compliance rules, and for sole traders it's unlawful under PECR.
+
+---
+
 ## Folder layout
 
 One batch = one folder. One business = one subfolder keyed by Place ID. No
@@ -379,7 +444,7 @@ batches/2026-09-01_physios_hitchin/
 ## Development
 
 ```bash
-python3 -m unittest discover -s tests -t .      # 118 tests, no network needed
+python3 -m unittest discover -s tests -t .      # 155 tests, no network needed
 ```
 
 Every network client takes an injectable transport, so the whole pipeline is

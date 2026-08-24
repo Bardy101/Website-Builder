@@ -55,6 +55,29 @@ def format_officer_name(raw: str) -> str:
     return raw.title()
 
 
+def officer_name_parts(raw: str) -> dict:
+    """All the name parts, not just the two we print.
+
+    Middle names matter: a director filed as 'MADSEN, John Jay' may be the
+    'Jay' named on the practice website. Discarding the middle name loses
+    the only evidence that they are the same person.
+    """
+    if "," in raw:
+        surname, _, forenames = raw.partition(",")
+        parts = [p for p in forenames.strip().split() if p]
+        return {
+            "surname": surname.strip().title(),
+            "forenames": [p.title() for p in parts],
+            "display": format_officer_name(raw),
+        }
+    words = raw.split()
+    return {
+        "surname": words[-1].title() if words else "",
+        "forenames": [w.title() for w in words[:-1]],
+        "display": raw.title(),
+    }
+
+
 @dataclass
 class CompaniesHouseClient:
     api_key: Optional[str] = None
@@ -107,7 +130,10 @@ class CompaniesHouseClient:
         no name at all, so a weak match is discarded rather than guessed.
         """
         blank = {
-            "owner": {"name": None, "source": None, "confidence": "none"},
+            "owner": {
+                "name": None, "source": None, "confidence": "none",
+                "parts": None, "all_directors": [],
+            },
             "company": {"number": None, "type": "unknown"},
         }
         results = self._search(name) or {}
@@ -139,20 +165,29 @@ class CompaniesHouseClient:
         company_type = "llp" if "llp" in company_type_raw else "ltd"
 
         owner_name = None
+        owner_parts = None
+        all_directors = []
         officers = self._officers(number) if number else None
         for officer in (officers or {}).get("items", []) or []:
             if officer.get("resigned_on"):
                 continue
             role = (officer.get("officer_role") or "").lower()
             if "director" in role or "member" in role:
-                owner_name = format_officer_name(officer.get("name", ""))
-                break
+                parts = officer_name_parts(officer.get("name", ""))
+                all_directors.append(parts)
+                if owner_name is None:
+                    owner_name = parts["display"]
+                    owner_parts = parts
 
         return {
             "owner": {
                 "name": owner_name,
                 "source": "companies_house" if owner_name else None,
                 "confidence": "high" if owner_name else "none",
+                "parts": owner_parts,
+                # Several directors is itself a signal: a partnership may not
+                # have one obvious person to address.
+                "all_directors": [d["display"] for d in all_directors],
             },
             "company": {"number": number, "type": company_type},
         }

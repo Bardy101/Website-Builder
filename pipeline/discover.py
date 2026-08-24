@@ -14,6 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Callable, Iterable, Optional
 
+from .addressee import decide as decide_addressee
 from .places import normalise_place
 from .scoring import Weights, score_business
 from .site_checks import classify_url
@@ -34,6 +35,7 @@ def discover(
     places_client,
     site_checker=None,
     companies_house=None,
+    site_contacts=None,
     weights: Optional[Weights] = None,
     radius_m: int = 8000,
     top: int = 25,
@@ -98,6 +100,8 @@ def discover(
         business["preview_slug"] = slugify(business.get("name") or place_id)
         business["owner"] = {"name": None, "source": None, "confidence": "none"}
         business["company"] = {"number": None, "type": "unknown"}
+        business["site_contact"] = None
+        business["site_emails"] = []
         business["site_score"] = None
         business["lead_score"] = 0
 
@@ -136,6 +140,19 @@ def discover(
             )
             business["owner"] = found["owner"]
             business["company"] = found["company"]
+
+        # Spec section 5, step 2: the business's own About page. Companies
+        # House says who owns it; the website says who runs it.
+        if site_contacts is not None and business.get("website"):
+            site_found = site_contacts.find(business["website"]) or {}
+            business["site_contact"] = site_found.get("contact")
+            business["site_emails"] = site_found.get("emails", [])
+
+        business["addressee"] = decide_addressee(
+            business.get("owner"),
+            business.get("site_contact"),
+            company_type=(business.get("company") or {}).get("type", "unknown"),
+        )
 
         result = score_business(business, weights)
         if result.excluded:

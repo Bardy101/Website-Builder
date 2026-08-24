@@ -32,7 +32,11 @@ SHORTLIST_COLUMNS = [
     "rating",
     "review_count",
     "recent_review_date",
+    "address_to",
+    "contact_check",
     "owner_name",
+    "site_contact",
+    "contact_email",
     "company_type",
     "phone",
     "address",
@@ -187,8 +191,23 @@ def business_to_row(business: dict) -> dict:
     company = business.get("company") or {}
     https = site.get("https")
 
+    site_contact = business.get("site_contact") or {}
+    addressee = business.get("addressee") or {}
+    site_label = ""
+    if site_contact.get("name"):
+        site_label = site_contact["name"]
+        if site_contact.get("role"):
+            site_label += f" ({site_contact['role']})"
+
     return {
         "lead_score": business.get("lead_score", 0),
+        "address_to": addressee.get("address_to") or "",
+        # 'differ' and 'likely_same' are the rows worth ten seconds of your eyes.
+        "contact_check": addressee.get("verdict") or "",
+        "site_contact": site_label,
+        # A signal about who to address, NOT a mailing list: unsolicited
+        # email is not permitted, and for sole traders it is unlawful.
+        "contact_email": site_contact.get("email") or "",
         "name": business.get("name") or "",
         "town": address.get("town") or "",
         "website": business.get("website") or "",
