@@ -49,6 +49,10 @@ class Config:
     def from_env(cls, *, load_env_file: bool = True) -> "Config":
         if load_env_file:
             load_dotenv()
+            # Also try the .env beside the project, so launching from another
+            # working directory still finds your keys. load_dotenv never
+            # overwrites what is already set, so the local file still wins.
+            load_dotenv(Path(__file__).resolve().parent.parent / ".env")
         return cls(
             google_places_api_key=os.environ.get("GOOGLE_PLACES_API_KEY") or None,
             pagespeed_api_key=os.environ.get("PAGESPEED_API_KEY") or None,

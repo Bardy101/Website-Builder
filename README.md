@@ -85,6 +85,7 @@ Paths in the examples below use forward slashes; PowerShell accepts either.
   3  Tune the scoring from your decisions
   4  Open a shortlist in your spreadsheet app
   5  Check setup (keys, dependencies)
+  6  Set up API keys (writes your .env file)
   q  Quit
 ```
 
@@ -125,15 +126,36 @@ API call.
 
 ## Setup for real runs
 
-```bash
-cp .env.example .env      # then fill in your keys
-```
+**Do you need a `.env` file?** Only to search real businesses — the demo data
+works without one. It's a plain text file holding your API keys, kept out of
+the code so they never reach GitHub (it's gitignored).
+
+The easiest way to create it is **option 6 on the menu**, which prompts for
+each key and writes the file for you. Windows Explorer refuses to create files
+whose name starts with a dot, so this saves a genuine fight. By hand:
+`cp .env.example .env` and fill it in.
 
 | Key | Needed for | Cost |
 |---|---|---|
-| `GOOGLE_PLACES_API_KEY` | discover — search and details | Paid, but cached 30 days |
+| `GOOGLE_PLACES_API_KEY` | discover — search and details | Free allowance, then paid; cached 30 days |
 | `PAGESPEED_API_KEY` | mobile scores | Free, rate-limited |
 | `COMPANIES_HOUSE_API_KEY` | owner names | Free |
+
+**Where to get them:**
+
+- **Google Places** — [console.cloud.google.com](https://console.cloud.google.com/):
+  create a project, enable **Places API (New)**, then Credentials → Create API
+  key. Billing has to be enabled, but there's a free monthly allowance that
+  comfortably covers this usage. Check
+  [current pricing](https://mapsplatform.google.com/pricing/) before you start,
+  and set a budget cap while you're in there.
+- **PageSpeed Insights** — same console, enable the PageSpeed Insights API.
+  Free; the same key usually works for both.
+- **Companies House** — [developer.company-information.service.gov.uk](https://developer.company-information.service.gov.uk/):
+  sign up, create an application, copy the key. Free.
+
+Each API costs nothing until you use it, and results are cached for 30 days,
+so re-running a niche doesn't re-spend.
 
 Only Places is required. Without the others you still get a ranked list —
 `site_verdict` falls back to what the URL alone can tell you, and `owner_name`
@@ -269,7 +291,7 @@ batches/2026-09-01_physios_hitchin/
 ## Development
 
 ```bash
-python3 -m unittest discover -s tests -t .      # 83 tests, no network needed
+python3 -m unittest discover -s tests -t .      # 88 tests, no network needed
 ```
 
 Every network client takes an injectable transport, so the whole pipeline is

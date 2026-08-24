@@ -252,12 +252,120 @@ def action_check() -> None:
 
     if not config.google_places_api_key:
         print("\nWithout a Places key you can still run the demo data from the menu.")
-        print("To search for real businesses: copy .env.example to .env and add a key.")
+        print("To search real businesses, choose 'Set up API keys' on the menu —")
+        print("it writes the .env file for you.")
 
     folders = list_batches()
     print(f"\nBatches so far   {len(folders)}")
     for folder in folders[:5]:
         print(f"    {folder.name}")
+
+
+
+KEY_INFO = [
+    (
+        "GOOGLE_PLACES_API_KEY",
+        "Google Places",
+        "Required to search for real businesses.",
+        "https://console.cloud.google.com/ -> create a project -> enable\n"
+        "     'Places API (New)' -> Credentials -> Create API key.\n"
+        "     Billing must be enabled, but there is a free monthly allowance\n"
+        "     that comfortably covers a batch or two. Check current pricing at\n"
+        "     https://mapsplatform.google.com/pricing/",
+    ),
+    (
+        "PAGESPEED_API_KEY",
+        "PageSpeed Insights",
+        "Optional. Gives mobile scores, so 'poor' and 'dated' verdicts mean\n"
+        "     something. Without it sites you have are marked 'unknown'.",
+        "Same Google console, enable 'PageSpeed Insights API'. Free.\n"
+        "     The same key often works for both.",
+    ),
+    (
+        "COMPANIES_HOUSE_API_KEY",
+        "Companies House",
+        "Optional. Fills in owner names so letters open 'Dear Sarah'\n"
+        "     instead of 'FAO the Owner'.",
+        "https://developer.company-information.service.gov.uk/ -> sign up ->\n"
+        "     create an application -> API key. Free.",
+    ),
+]
+
+
+def read_existing_env() -> dict[str, str]:
+    """Parse the current .env, so setup edits rather than overwrites."""
+    env_path = HERE / ".env"
+    values: dict[str, str] = {}
+    if not env_path.is_file():
+        return values
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if line and not line.startswith("#") and "=" in line:
+            key, _, value = line.partition("=")
+            values[key.strip()] = value.strip().strip('"').strip("'")
+    return values
+
+
+def write_env(values: dict[str, str]) -> Path:
+    """Write .env with comments intact. Windows Explorer won't make this file."""
+    env_path = HERE / ".env"
+    lines = [
+        "# Postal Outreach Pipeline — API keys.",
+        "# Written by the setup menu. Safe to edit by hand.",
+        "# This file is gitignored: your keys never reach GitHub.",
+        "",
+    ]
+    for key, label, purpose, _ in KEY_INFO:
+        lines.append(f"# {label} — {purpose.splitlines()[0].strip()}")
+        lines.append(f"{key}={values.get(key, '')}")
+        lines.append("")
+    for key in ("PIPELINE_CACHE_DIR", "PIPELINE_BATCHES_DIR", "PIPELINE_CACHE_TTL_DAYS"):
+        if key in values:
+            lines.append(f"{key}={values[key]}")
+    env_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
+    return env_path
+
+
+def action_keys() -> None:
+    print("\nAPI keys")
+    print("-" * 60)
+    print("These live in a file called .env in the project folder. You only")
+    print("need them to search for real businesses — the demo data works")
+    print("without any. Press Enter to skip any key and keep what's there.\n")
+
+    existing = read_existing_env()
+    values = dict(existing)
+
+    for key, label, purpose, where in KEY_INFO:
+        current = existing.get(key, "")
+        shown = f"set, ending …{current[-4:]}" if current else "not set"
+        print(f"\n{label}  ({shown})")
+        print(f"     {purpose}")
+        print(f"     Get one: {where}")
+        answer = ask("     Paste the key (Enter to skip)").strip()
+        if answer:
+            values[key] = answer
+
+    if values == existing and (HERE / ".env").is_file():
+        print("\nNothing changed.")
+        return
+    if not any(values.get(k) for k, _, _, _ in KEY_INFO):
+        print("\nNo keys entered, so nothing was written.")
+        print("You can still use the demo data from the menu.")
+        return
+
+    path = write_env(values)
+    # Make the new keys live for the rest of this session, not just the next.
+    for key, value in values.items():
+        if value:
+            os.environ[key] = value
+
+    print(f"\nWritten to {path}")
+    have = [label for key, label, _, _ in KEY_INFO if values.get(key)]
+    print("Keys set: " + ", ".join(have))
+    if values.get("GOOGLE_PLACES_API_KEY"):
+        print("\nYou can now search real businesses: 'Find prospects' on the menu,")
+        print("and answer 'n' when it offers the demo data.")
 
 
 MENU = [
@@ -266,6 +374,7 @@ MENU = [
     ("3", "Tune the scoring from your decisions", action_tune),
     ("4", "Open a shortlist in your spreadsheet app", action_open),
     ("5", "Check setup (keys, dependencies)", action_check),
+    ("6", "Set up API keys (writes your .env file)", action_keys),
 ]
 
 

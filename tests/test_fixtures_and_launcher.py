@@ -88,5 +88,70 @@ class TestLauncherHelpers(unittest.TestCase):
         self.assertEqual(found, ["real_batch"])
 
 
+
+class TestEnvSetup(unittest.TestCase):
+    """The setup menu writes .env; it must never lose an existing key."""
+
+    def _with_env(self, content, fn):
+        import run
+
+        env_path = run.HERE / ".env"
+        backup = env_path.read_text(encoding="utf-8") if env_path.is_file() else None
+        try:
+            if content is None:
+                env_path.unlink(missing_ok=True)
+            else:
+                env_path.write_text(content, encoding="utf-8")
+            return fn(run)
+        finally:
+            if backup is None:
+                env_path.unlink(missing_ok=True)
+            else:
+                env_path.write_text(backup, encoding="utf-8")
+
+    def test_reads_existing_values(self):
+        values = self._with_env(
+            "# comment\nGOOGLE_PLACES_API_KEY=abc123\n\nPAGESPEED_API_KEY=\n",
+            lambda run: run.read_existing_env(),
+        )
+        self.assertEqual(values["GOOGLE_PLACES_API_KEY"], "abc123")
+        self.assertEqual(values["PAGESPEED_API_KEY"], "")
+
+    def test_missing_env_reads_as_empty(self):
+        self.assertEqual(self._with_env(None, lambda run: run.read_existing_env()), {})
+
+    def test_write_then_read_roundtrips_every_key(self):
+        def go(run):
+            run.write_env({
+                "GOOGLE_PLACES_API_KEY": "places-key",
+                "PAGESPEED_API_KEY": "speed-key",
+                "COMPANIES_HOUSE_API_KEY": "ch-key",
+            })
+            return run.read_existing_env()
+
+        values = self._with_env(None, go)
+        self.assertEqual(values["GOOGLE_PLACES_API_KEY"], "places-key")
+        self.assertEqual(values["PAGESPEED_API_KEY"], "speed-key")
+        self.assertEqual(values["COMPANIES_HOUSE_API_KEY"], "ch-key")
+
+    def test_writing_one_key_preserves_the_others(self):
+        def go(run):
+            existing = run.read_existing_env()
+            existing["PAGESPEED_API_KEY"] = "new-speed-key"
+            run.write_env(existing)
+            return run.read_existing_env()
+
+        values = self._with_env("GOOGLE_PLACES_API_KEY=keep-me\n", go)
+        self.assertEqual(values["GOOGLE_PLACES_API_KEY"], "keep-me")
+        self.assertEqual(values["PAGESPEED_API_KEY"], "new-speed-key")
+
+    def test_quoted_values_are_unquoted(self):
+        values = self._with_env(
+            'GOOGLE_PLACES_API_KEY="quoted-key"\n',
+            lambda run: run.read_existing_env(),
+        )
+        self.assertEqual(values["GOOGLE_PLACES_API_KEY"], "quoted-key")
+
+
 if __name__ == "__main__":
     unittest.main()
