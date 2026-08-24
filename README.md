@@ -176,8 +176,16 @@ FAIL  Google Places: the key is restricted to websites (HTTP referrers)
 
 Restriction changes can take a few minutes to take effect, so if a test fails
 right after an edit, wait and run it again.
-- **PageSpeed Insights** — same console, enable the PageSpeed Insights API.
-  Free; the same key usually works for both.
+- **PageSpeed Insights** — **no separate key needed.** Enabling an API in
+  Google Cloud doesn't issue a key; keys live under **Credentials** and are
+  shared across the APIs you tick on them. So: enable the PageSpeed Insights
+  API, then go to Credentials → click your existing Places key → under **API
+  restrictions** tick **PageSpeed Insights API** as well → Save. Paste the same
+  key into both prompts (menu option 6 offers to do this for you). Free.
+
+  The API does answer without any key, but on a low anonymous quota that a
+  batch of 25 sites can exhaust — scores then come back empty and those sites
+  are scored `unknown`.
 - **Companies House** — nothing to do with Google; it's a UK government
   service with its own registration.
   [developer.company-information.service.gov.uk](https://developer.company-information.service.gov.uk/)
@@ -326,7 +334,7 @@ batches/2026-09-01_physios_hitchin/
 ## Development
 
 ```bash
-python3 -m unittest discover -s tests -t .      # 107 tests, no network needed
+python3 -m unittest discover -s tests -t .      # 109 tests, no network needed
 ```
 
 Every network client takes an injectable transport, so the whole pipeline is

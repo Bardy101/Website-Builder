@@ -278,8 +278,12 @@ KEY_INFO = [
         "PageSpeed Insights",
         "Optional. Gives mobile scores, so 'poor' and 'dated' verdicts mean\n"
         "     something. Without it sites you have are marked 'unknown'.",
-        "Same Google console, enable 'PageSpeed Insights API'. Free.\n"
-        "     The same key often works for both.",
+        "You almost certainly do not need a new key — your Places key\n"
+        "     works for this too. Enabling an API in Google Cloud does not\n"
+        "     issue a key; keys live under Credentials and are shared.\n"
+        "     In the console: Credentials -> click your key -> under 'API\n"
+        "     restrictions' tick 'PageSpeed Insights API' as well -> Save.\n"
+        "     Free.",
     ),
     (
         "COMPANIES_HOUSE_API_KEY",
@@ -346,6 +350,19 @@ def action_keys() -> None:
         print(f"\n{label}  ({shown})")
         print(f"     {purpose}")
         print(f"     Get one: {where}")
+
+        # PageSpeed runs on the same Google key as Places. Offering the reuse
+        # saves a trip to the console for a key that was never needed.
+        places_key = values.get("GOOGLE_PLACES_API_KEY", "")
+        if key == "PAGESPEED_API_KEY" and places_key and places_key != current:
+            if ask_yes_no(
+                f"     Reuse your Places key (…{places_key[-4:]}) for this?", True
+            ):
+                values[key] = places_key
+                print("     Using the Places key. Make sure 'PageSpeed Insights API'")
+                print("     is ticked under that key's API restrictions.")
+                continue
+
         answer = ask("     Paste the key (Enter to skip)").strip()
         if answer:
             values[key] = answer

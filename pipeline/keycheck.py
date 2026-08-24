@@ -120,8 +120,11 @@ def test_pagespeed(api_key: Optional[str], *, get: Optional[Callable] = None) ->
     if not api_key:
         return KeyTestResult(
             name, False, "no key set (optional)",
-            "Without it, sites you find are scored 'unknown' rather than\n"
-            "'poor' or 'dated'. Free to add.",
+            "This API also answers without a key, but on a low anonymous\n"
+            "quota that a batch of 25 sites can exhaust — scores then come\n"
+            "back empty and those sites are rated 'unknown'.\n"
+            "Your Google Places key works here too: tick 'PageSpeed Insights\n"
+            "API' under that key's API restrictions and reuse it.",
         )
 
     def default_get(url, params):

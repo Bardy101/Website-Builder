@@ -123,5 +123,22 @@ class TestOtherKeyTests(unittest.TestCase):
         self.assertIn("sandbox", result.hint)
 
 
+
+class TestPagespeedGuidance(unittest.TestCase):
+    """PageSpeed needs no key of its own — the Places key serves both."""
+
+    def test_missing_key_explains_the_shared_key(self):
+        result = test_pagespeed(None)
+        self.assertFalse(result.ok)
+        self.assertIn("Places key works here too", result.hint)
+        self.assertIn("without a key", result.hint)
+
+    def test_missing_key_does_not_call_out(self):
+        def boom(*a, **k):
+            raise AssertionError("should not call the API without a key")
+
+        test_pagespeed(None, get=boom)
+
+
 if __name__ == "__main__":
     unittest.main()
