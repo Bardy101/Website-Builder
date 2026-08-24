@@ -135,5 +135,103 @@ class TestCallCounting(unittest.TestCase):
             self.assertGreater(second.stats["details_requested"], 0)
 
 
+
+class TestRadiusReachesTheAPI(unittest.TestCase):
+    """The radius must bias the search, not merely change the cache key.
+
+    Before this was wired up, widening 8000 -> 10000 busted the cache, paid
+    for a fresh search, and returned exactly the same places.
+    """
+
+    def _client(self, recorder):
+        def post(url, *, json_body, headers):
+            if json_body.get("textQuery") == "Hitchin":
+                return {"places": [{"location": {"latitude": 51.9, "longitude": -0.28}}]}
+            recorder.append(json_body)
+            return {"places": [{"id": "a1"}]}
+
+        return PlacesClient(api_key="k", post=post)
+
+    def test_radius_is_sent_as_a_location_bias(self):
+        sent = []
+        self._client(sent).search("physio", "Hitchin", radius_m=10000)
+        bias = sent[0].get("locationBias", {}).get("circle", {})
+        self.assertEqual(bias.get("radius"), 10000.0)
+        self.assertEqual(bias["center"]["latitude"], 51.9)
+
+    def test_different_radii_send_different_requests(self):
+        a, b = [], []
+        self._client(a).search("physio", "Hitchin", radius_m=8000)
+        self._client(b).search("physio", "Hitchin", radius_m=10000)
+        self.assertNotEqual(
+            a[0]["locationBias"]["circle"]["radius"],
+            b[0]["locationBias"]["circle"]["radius"],
+        )
+
+    def test_area_center_is_cached_across_niches(self):
+        centre_calls = []
+
+        def post(url, *, json_body, headers):
+            if json_body.get("textQuery") in ("Hitchin",):
+                centre_calls.append(json_body)
+                return {"places": [{"location": {"latitude": 51.9, "longitude": -0.28}}]}
+            return {"places": [{"id": "a1"}]}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Cache(tmp, 30)
+            for niche in ("physio", "accountant", "plumber"):
+                PlacesClient(api_key="k", post=post, cache=cache).search(niche, "Hitchin")
+            self.assertEqual(len(centre_calls), 1)
+
+    def test_search_still_works_without_a_centre(self):
+        """A town Google can't locate must not break the search."""
+        sent = []
+
+        def post(url, *, json_body, headers):
+            if json_body.get("textQuery") == "Nowheresville":
+                return {"places": []}
+            sent.append(json_body)
+            return {"places": [{"id": "a1"}]}
+
+        results = PlacesClient(api_key="k", post=post).search("physio", "Nowheresville")
+        self.assertEqual(len(results), 1)
+        self.assertNotIn("locationBias", sent[0])
+
+
+class TestRefreshBypassesCache(unittest.TestCase):
+    """--refresh re-fetches on purpose; it costs real calls."""
+
+    def test_bypass_forces_a_refetch(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            warm = Cache(tmp, 30)
+            first = make_client(cache=warm)
+            discover(niche="physiotherapist", area="Hitchin", places_client=first,
+                     weights=Weights.load(ROOT / "weights.json"), top=25,
+                     seen_place_ids=set())
+            self.assertGreater(first.stats["details_fetched"], 0)
+
+            cached = make_client(cache=Cache(tmp, 30))
+            discover(niche="physiotherapist", area="Hitchin", places_client=cached,
+                     weights=Weights.load(ROOT / "weights.json"), top=25,
+                     seen_place_ids=set())
+            self.assertEqual(cached.stats["details_fetched"], 0)
+
+            forced = make_client(cache=Cache(tmp, 30, bypass=True))
+            discover(niche="physiotherapist", area="Hitchin", places_client=forced,
+                     weights=Weights.load(ROOT / "weights.json"), top=25,
+                     seen_place_ids=set())
+            self.assertEqual(
+                forced.stats["details_fetched"], first.stats["details_fetched"]
+            )
+
+    def test_bypass_still_writes_fresh_values(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            Cache(tmp, 30).set("ns", "k", {"v": "old"})
+            bypassing = Cache(tmp, 30, bypass=True)
+            self.assertIsNone(bypassing.get("ns", "k"))
+            bypassing.get_or_fetch("ns", "k", lambda: {"v": "new"})
+            self.assertEqual(Cache(tmp, 30).get("ns", "k"), {"v": "new"})
+
+
 if __name__ == "__main__":
     unittest.main()

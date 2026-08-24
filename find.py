@@ -84,6 +84,11 @@ def parse_args(argv=None):
         "--fixture",
         help="JSON fixture of Places responses; runs fully offline, no API key needed",
     )
+    p.add_argument(
+        "--refresh",
+        action="store_true",
+        help="ignore the cache and re-fetch everything (costs real API calls)",
+    )
     p.add_argument("--quiet", action="store_true")
     # Set by run.py so the closing hint points at the menu, not a command line.
     p.add_argument("--from-menu", action="store_true", help=argparse.SUPPRESS)
@@ -101,7 +106,9 @@ def load_batch_config(path: str) -> dict:
 
 def build_clients(args, config: Config):
     """Wire up the clients, with a fixture path for offline runs."""
-    cache = Cache(config.cache_dir, config.cache_ttl_days)
+    cache = Cache(
+        config.cache_dir, config.cache_ttl_days, bypass=getattr(args, "refresh", False)
+    )
 
     if args.fixture:
         from pipeline.fixtures import FixturePlacesClient

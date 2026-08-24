@@ -35,15 +35,22 @@ def _safe_name(key: str) -> str:
 
 
 class Cache:
-    def __init__(self, cache_dir: str | Path, ttl_days: int = 30) -> None:
+    def __init__(
+        self, cache_dir: str | Path, ttl_days: int = 30, *, bypass: bool = False
+    ) -> None:
         self.root = Path(cache_dir)
         self.ttl = timedelta(days=ttl_days)
+        # bypass re-fetches everything and overwrites what is stored. It costs
+        # real API calls, so it is opt-in per run rather than a default.
+        self.bypass = bypass
 
     def _path(self, namespace: str, key: str) -> Path:
         return self.root / namespace / f"{_safe_name(key)}.json"
 
     def get(self, namespace: str, key: str) -> Any | None:
         """Return cached data if present and not expired, else None."""
+        if self.bypass:
+            return None
         path = self._path(namespace, key)
         if not path.is_file():
             return None

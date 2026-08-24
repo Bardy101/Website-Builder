@@ -84,19 +84,24 @@ class TestPlacesClient(unittest.TestCase):
             {"places": [{"id": f"a{i}"} for i in range(20)], "nextPageToken": "t1"},
             {"places": [{"id": f"b{i}"} for i in range(20)]},
         ]
-        calls = []
+        search_calls = []
 
         def post(url, *, json_body, headers):
-            calls.append(json_body)
-            return pages[len(calls) - 1]
+            # The centre lookup searches for the bare area name.
+            if json_body.get("textQuery") == "Hitchin":
+                return {"places": [{"location": {"latitude": 51.9, "longitude": -0.28}}]}
+            search_calls.append(json_body)
+            return pages[len(search_calls) - 1]
 
         client = PlacesClient(api_key="k", post=post)
         results = client.search("physio", "Hitchin", max_results=40)
         self.assertEqual(len(results), 40)
-        self.assertEqual(calls[1]["pageToken"], "t1")
+        self.assertEqual(search_calls[1]["pageToken"], "t1")
 
     def test_search_respects_max_results(self):
         def post(url, *, json_body, headers):
+            if json_body.get("textQuery") == "H":
+                return {"places": [{"location": {"latitude": 1.0, "longitude": 2.0}}]}
             return {"places": [{"id": f"a{i}"} for i in range(20)], "nextPageToken": "t"}
 
         client = PlacesClient(api_key="k", post=post)

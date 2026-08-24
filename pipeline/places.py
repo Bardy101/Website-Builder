@@ -24,6 +24,8 @@ DETAILS_URL = "https://places.googleapis.com/v1/places/{place_id}"
 # 1k per SKU). Asking for businessStatus here moves Text Search up a tier,
 # but it is one call per search and it saves an Enterprise-tier Place Details
 # call for every closed business and chain we would otherwise fetch and bin.
+# Locating a town: one cheap Essentials call, cached — towns don't move.
+AREA_FIELDS = "places.id,places.location,places.displayName"
 SEARCH_FIELDS = (
     "places.id,places.displayName,places.formattedAddress,"
     "places.businessStatus,nextPageToken"
@@ -142,6 +144,7 @@ class PlacesClient:
         cache_key = f"{query}|r={radius_m}|n={max_results}"
 
         self.stats["search_requested"] += 1
+        centre = self.area_center(area) if radius_m else None
 
         def fetch() -> list[dict]:
             self.stats["search_fetched"] += 1
@@ -159,6 +162,13 @@ class PlacesClient:
                     "regionCode": region,
                     "maxResultCount": min(20, max_results - len(results)),
                 }
+                # Without this the radius argument does nothing at all: it
+                # would only ever have changed the cache key, so widening it
+                # bought a fresh billable search returning identical results.
+                if centre:
+                    body["locationBias"] = {
+                        "circle": {"center": centre, "radius": float(radius_m)}
+                    }
                 if page_token:
                     body["pageToken"] = page_token
                 data = self._do_post(SEARCH_URL, json_body=body, headers=headers)
@@ -171,6 +181,45 @@ class PlacesClient:
         if self.cache is None:
             return fetch()
         return self.cache.get_or_fetch("places_search", cache_key, fetch)
+
+    def area_center(self, area: str) -> Optional[dict]:
+        """Coordinates for a town, so a radius can be applied to the search.
+
+        Text Search alone scopes by the words in the query; the radius has to
+        be expressed as a locationBias circle, which needs a centre point.
+        One cached Essentials-tier call per town, reused for every niche.
+        """
+
+        def fetch() -> Optional[dict]:
+            if not self.api_key:
+                return None
+            headers = {
+                "Content-Type": "application/json",
+                "X-Goog-Api-Key": self.api_key,
+                "X-Goog-FieldMask": AREA_FIELDS,
+            }
+            try:
+                data = self._do_post(
+                    SEARCH_URL,
+                    json_body={"textQuery": area, "maxResultCount": 1},
+                    headers=headers,
+                )
+            except PlacesError:
+                return None
+            places = data.get("places") or []
+            if not places:
+                return None
+            location = places[0].get("location") or {}
+            if "latitude" not in location or "longitude" not in location:
+                return None
+            return {
+                "latitude": location["latitude"],
+                "longitude": location["longitude"],
+            }
+
+        if self.cache is None:
+            return fetch()
+        return self.cache.get_or_fetch("area_center", area, fetch)
 
     def details(self, place_id: str) -> dict:
         """Full Place Details for one place ID, cached for the TTL."""

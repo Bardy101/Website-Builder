@@ -248,6 +248,32 @@ Google API usage this run:
   Enterprise allowance.
 ```
 
+### What a re-run costs
+
+The cache is keyed per item, not per run, so you only ever pay for what's
+genuinely new:
+
+| You do | Google calls |
+|---|---|
+| Run Hitchin, radius 8000 | Search + one Details per candidate |
+| **Re-run identical** | **Zero** — everything served from cache |
+| Widen to radius 10000 | One search. Details only for businesses not seen before |
+| Re-run at 10000 again | Zero |
+| `--refresh` | Everything again, deliberately |
+
+**Business data does not silently refresh.** A cached business keeps the
+phone, rating and reviews captured at first fetch for 30 days. That's the
+point — but it means a re-run won't pick up a business that has since changed
+its website or gone quiet. Use `--refresh` when you want current data and are
+willing to pay for it, or just wait for the 30-day expiry.
+
+**New features apply to cached businesses for free.** Each lookup is cached
+under its own key, so when a lookup is added that never ran before — the
+website contact lookup, say — a re-run fills it in for every business already
+cached without a single Google call. That's why scenario 2 above is zero: the
+Places data came from cache, and reading the business's own website costs
+nothing.
+
 At the spec's cadence — 10–15 letters a fortnight — the free allowance is
 comfortable. Widening `--top`, or running many niche/town pairs through
 `--batch-config`, is what eats it. Check the Cloud console's billing report
@@ -269,7 +295,14 @@ written and Google has changed them before.
 ```
 
 Useful flags: `--no-site-checks` (skip PageSpeed, much faster),
-`--no-owner-lookup`, `--weights other.json`, `--fixture` (offline).
+`--no-owner-lookup`, `--no-site-contacts`, `--weights other.json`,
+`--fixture` (offline), `--refresh` (ignore the cache and re-fetch).
+
+**On `--radius`:** it's applied as a *location bias*, not a hard boundary.
+Google weights results towards the circle rather than excluding everything
+outside it, so widening from 8000 to 10000 pulls in more outlying businesses
+but won't return a strictly bounded set. The town named in `--area` still does
+most of the scoping work.
 
 The batch-config version is the one that really kills the manual trawl: leave
 it running across Stevenage, Letchworth, Hitchin, Baldock and Royston, come
@@ -444,7 +477,7 @@ batches/2026-09-01_physios_hitchin/
 ## Development
 
 ```bash
-python3 -m unittest discover -s tests -t .      # 155 tests, no network needed
+python3 -m unittest discover -s tests -t .      # 161 tests, no network needed
 ```
 
 Every network client takes an injectable transport, so the whole pipeline is
