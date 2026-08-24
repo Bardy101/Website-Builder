@@ -86,6 +86,7 @@ Paths in the examples below use forward slashes; PowerShell accepts either.
   4  Open a shortlist in your spreadsheet app
   5  Check setup (keys, dependencies)
   6  Set up API keys (writes your .env file)
+  7  Test API keys (one small call each)
   q  Quit
 ```
 
@@ -149,6 +150,32 @@ whose name starts with a dot, so this saves a genuine fight. By hand:
   comfortably covers this usage. Check
   [current pricing](https://mapsplatform.google.com/pricing/) before you start,
   and set a budget cap while you're in there.
+
+### Key restrictions — one option here will break it
+
+When Google offers to restrict the new key:
+
+| Setting | Choose | Why |
+|---|---|---|
+| **Application restrictions** | **None** | "Websites" checks the browser referrer header. Python sends none, so every call is blocked. "IP addresses" works only with a static IP — home broadband rotates, so it breaks silently later. |
+| **API restrictions** | **Restrict key**, tick **Places API (New)** (and PageSpeed Insights if sharing the key) | Free protection: a leaked key can't be spent on anything else. Tick the *New* Places API — the legacy "Places API" is a different one and won't work. |
+
+Your key lives only in the gitignored `.env` on your machine, so "None" for
+application restrictions is a reasonable trade here. Set a **budget cap** in
+the console as the real backstop.
+
+**Menu option 7 tests this for you** — one small call per key, and it names
+the specific misconfiguration rather than returning a raw permission error:
+
+```
+FAIL  Google Places: the key is restricted to websites (HTTP referrers)
+        Application restrictions must be 'None' (or an IP address).
+        A 'Websites' restriction checks the browser referrer header,
+        which a Python script does not send, so every call is blocked.
+```
+
+Restriction changes can take a few minutes to take effect, so if a test fails
+right after an edit, wait and run it again.
 - **PageSpeed Insights** — same console, enable the PageSpeed Insights API.
   Free; the same key usually works for both.
 - **Companies House** — [developer.company-information.service.gov.uk](https://developer.company-information.service.gov.uk/):
@@ -291,7 +318,7 @@ batches/2026-09-01_physios_hitchin/
 ## Development
 
 ```bash
-python3 -m unittest discover -s tests -t .      # 88 tests, no network needed
+python3 -m unittest discover -s tests -t .      # 107 tests, no network needed
 ```
 
 Every network client takes an injectable transport, so the whole pipeline is

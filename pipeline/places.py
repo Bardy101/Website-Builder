@@ -47,6 +47,22 @@ class PlacesError(RuntimeError):
     pass
 
 
+def _explain(status: int, body: str, what: str) -> str:
+    """Turn an API error into something that names the likely fix.
+
+    A key restricted to websites is the common trap: it looks like the
+    cautious choice in the console, but blocks server-side calls entirely.
+    """
+    from .keycheck import diagnose_google
+
+    detail, hint = diagnose_google(status, body)
+    message = f"{what} failed [{status}]: {detail}"
+    if hint:
+        message += "\n\n" + hint
+    message += "\n\nRun 'Test API keys' on the menu to check the key on its own."
+    return message
+
+
 @dataclass
 class PlacesClient:
     api_key: Optional[str] = None
@@ -58,8 +74,9 @@ class PlacesClient:
     def _require_key(self) -> str:
         if not self.api_key:
             raise PlacesError(
-                "GOOGLE_PLACES_API_KEY is not set. Copy .env.example to .env "
-                "and add your key, or run with --fixture for offline testing."
+                "GOOGLE_PLACES_API_KEY is not set.\n\n"
+                "Add one with 'Set up API keys' on the run.bat menu, or run\n"
+                "with --fixture to use the offline demo data."
             )
         return self.api_key
 
@@ -70,7 +87,7 @@ class PlacesClient:
 
         resp = requests.post(url, json=json_body, headers=headers, timeout=self.timeout)
         if resp.status_code >= 400:
-            raise PlacesError(f"Places search failed [{resp.status_code}]: {resp.text[:400]}")
+            raise PlacesError(_explain(resp.status_code, resp.text, "Places search"))
         return resp.json()
 
     def _do_get(self, url: str, *, headers: dict) -> dict:
@@ -80,7 +97,7 @@ class PlacesClient:
 
         resp = requests.get(url, headers=headers, timeout=self.timeout)
         if resp.status_code >= 400:
-            raise PlacesError(f"Place details failed [{resp.status_code}]: {resp.text[:400]}")
+            raise PlacesError(_explain(resp.status_code, resp.text, "Place details"))
         return resp.json()
 
     # -- public API ---------------------------------------------------------

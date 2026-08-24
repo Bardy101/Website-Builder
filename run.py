@@ -368,6 +368,31 @@ def action_keys() -> None:
         print("and answer 'n' when it offers the demo data.")
 
 
+
+def action_test_keys() -> None:
+    from pipeline.keycheck import test_companies_house, test_pagespeed, test_places
+
+    config = Config.from_env()
+    print("\nTest API keys")
+    print("-" * 60)
+    print("Makes one small call per key to check it actually works —")
+    print("this is what catches a key restricted the wrong way.\n")
+
+    print("Google Places…", flush=True)
+    print(test_places(config.google_places_api_key))
+
+    if config.pagespeed_api_key:
+        print("\nPageSpeed Insights… (this one takes 20-30 seconds)", flush=True)
+    print(test_pagespeed(config.pagespeed_api_key))
+
+    print()
+    print(test_companies_house(config.companies_house_api_key))
+
+    print("\n" + "-" * 60)
+    print("A restriction change can take a few minutes to take effect,")
+    print("so if you have just edited the key, wait and test again.")
+
+
 MENU = [
     ("1", "Find prospects", action_find),
     ("2", "Review a shortlist (cull to your 10-15)", action_cull),
@@ -375,6 +400,7 @@ MENU = [
     ("4", "Open a shortlist in your spreadsheet app", action_open),
     ("5", "Check setup (keys, dependencies)", action_check),
     ("6", "Set up API keys (writes your .env file)", action_keys),
+    ("7", "Test API keys (one small call each)", action_test_keys),
 ]
 
 
