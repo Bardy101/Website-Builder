@@ -209,6 +209,51 @@ disk for 30 days, keyed by place ID. Re-running a niche is near-instant and
 near-free, and you can widen the radius without re-paying for what you have.
 A failed call is never cached, so one bad API day doesn't poison a month.
 
+### What a run actually costs
+
+Google retired the pooled $200 monthly credit in March 2025. Each SKU now has
+its own free monthly allowance and they don't pool:
+
+| Tier | Free calls/month per SKU |
+|---|---|
+| Essentials | 10,000 |
+| Pro | 5,000 |
+| **Enterprise** | **1,000** |
+
+**Which tier you land in depends on the fields you ask for.** This tool's
+Place Details call requests reviews, rating and photos — Enterprise fields —
+so **Place Details bills at Enterprise, the 1,000/month tier**. That's the
+number that matters here. Text Search asks for far less and bills at Pro.
+
+The expensive fields aren't optional padding: the spec needs verbatim review
+quotes for the letter copy, and `recent_review_date` is the single best
+"still trading properly" signal in the shortlist.
+
+Two things keep the cost down:
+
+- **Chains and closed businesses are screened from the search response**, so
+  they never cost a Place Details call. The search asks for `businessStatus`
+  precisely so this is possible.
+- **Everything is cached for 30 days.** Re-running the same niche costs
+  nothing at all.
+
+Every run prints what it spent:
+
+```
+Google API usage this run:
+     1  Text Search    (Pro tier, 5,000 free/month)
+    39  Place Details  (Enterprise tier, 1,000 free/month)
+    12  served from the 30-day cache, costing nothing
+  At this rate, roughly 25 more runs this month within the free
+  Enterprise allowance.
+```
+
+At the spec's cadence — 10–15 letters a fortnight — the free allowance is
+comfortable. Widening `--top`, or running many niche/town pairs through
+`--batch-config`, is what eats it. Check the Cloud console's billing report
+for the authoritative figure; the tiers above were current when this was
+written and Google has changed them before.
+
 ---
 
 ## The commands
@@ -334,7 +379,7 @@ batches/2026-09-01_physios_hitchin/
 ## Development
 
 ```bash
-python3 -m unittest discover -s tests -t .      # 109 tests, no network needed
+python3 -m unittest discover -s tests -t .      # 118 tests, no network needed
 ```
 
 Every network client takes an injectable transport, so the whole pipeline is

@@ -46,6 +46,9 @@ class FixturePlacesClient:
                     "id": place.get("id"),
                     "displayName": place.get("displayName"),
                     "formattedAddress": place.get("formattedAddress"),
+                    # The real search returns this too, and discover screens
+                    # on it to avoid a needless details call.
+                    "businessStatus": place.get("businessStatus"),
                 }
             )
         return out[:max_results]

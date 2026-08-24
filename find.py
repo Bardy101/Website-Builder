@@ -221,6 +221,23 @@ def main(argv=None) -> int:
                 "(chain or not operational).")
         return 1
 
+    stats = getattr(places, "stats", None)
+    if stats and not args.fixture:
+        searches = stats["search_fetched"]
+        details = stats["details_fetched"]
+        cached = (stats["search_requested"] - searches) + (
+            stats["details_requested"] - details
+        )
+        say("")
+        say("Google API usage this run:")
+        say(f"  {searches:>4}  Text Search    (Pro tier, 5,000 free/month)")
+        say(f"  {details:>4}  Place Details  (Enterprise tier, 1,000 free/month)")
+        if cached:
+            say(f"  {cached:>4}  served from the 30-day cache, costing nothing")
+        if details:
+            say(f"  At this rate, roughly {1000 // max(details, 1)} more runs "
+                "this month within the free Enterprise allowance.")
+
     say("")
     if args.from_menu:
         say("Next: cull this to 10-15 with 'Review a shortlist' on the menu.")

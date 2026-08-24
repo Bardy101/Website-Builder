@@ -65,6 +65,29 @@ def discover(
             continue
         seen.add(place_id)
 
+        # Screen on what the search already told us, before spending a
+        # Place Details call. Details bill at the Enterprise tier (reviews,
+        # rating, photos), so fetching a chain or a closed business and then
+        # binning it is the most expensive thing this stage can do.
+        stub_name = (stub.get("displayName") or {}).get("text") or ""
+        stub_probe = {
+            "name": stub_name,
+            "business_status": stub.get("businessStatus"),
+        }
+        stub_verdict = score_business(stub_probe, weights)
+        if stub_verdict.excluded:
+            excluded.append(
+                {
+                    "place_id": place_id,
+                    "name": stub_name,
+                    "excluded": stub_verdict.exclude_reason,
+                    "screened_before_details": True,
+                }
+            )
+            say(f"  excluded ({stub_verdict.exclude_reason}, no details call): "
+                f"{stub_name}")
+            continue
+
         detail = places_client.details(place_id)
         if not detail:
             continue

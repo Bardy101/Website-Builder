@@ -12,14 +12,26 @@ the query + radius, so widening a radius does not re-pay for known places.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
 SEARCH_URL = "https://places.googleapis.com/v1/places:searchText"
 DETAILS_URL = "https://places.googleapis.com/v1/places/{place_id}"
 
 # Only ask for the fields we use — field masks are what the API bills on.
-SEARCH_FIELDS = "places.id,places.displayName,places.formattedAddress,nextPageToken"
+# Field masks decide which billing SKU a call lands in, and the tiers have
+# very different free monthly allowances (Essentials 10k, Pro 5k, Enterprise
+# 1k per SKU). Asking for businessStatus here moves Text Search up a tier,
+# but it is one call per search and it saves an Enterprise-tier Place Details
+# call for every closed business and chain we would otherwise fetch and bin.
+SEARCH_FIELDS = (
+    "places.id,places.displayName,places.formattedAddress,"
+    "places.businessStatus,nextPageToken"
+)
+# These include reviews, rating and photos, which are Enterprise-tier fields.
+# Every Place Details call therefore bills at Enterprise (1,000 free/month).
+# The spec needs them: verbatim review quotes for the letter copy, and
+# recent_review_date as the "still trading properly" signal.
 DETAIL_FIELDS = ",".join(
     [
         "id",
@@ -63,6 +75,15 @@ def _explain(status: int, body: str, what: str) -> str:
     return message
 
 
+def _new_stats() -> dict:
+    return {
+        "search_requested": 0,
+        "search_fetched": 0,
+        "details_requested": 0,
+        "details_fetched": 0,
+    }
+
+
 @dataclass
 class PlacesClient:
     api_key: Optional[str] = None
@@ -70,6 +91,8 @@ class PlacesClient:
     post: Optional[Callable[..., Any]] = None
     get: Optional[Callable[..., Any]] = None
     timeout: float = 30.0
+    # Billable calls actually made, vs served from the 30-day cache.
+    stats: dict = field(default_factory=_new_stats)
 
     def _require_key(self) -> str:
         if not self.api_key:
@@ -118,7 +141,10 @@ class PlacesClient:
         query = f"{niche} in {area}"
         cache_key = f"{query}|r={radius_m}|n={max_results}"
 
+        self.stats["search_requested"] += 1
+
         def fetch() -> list[dict]:
+            self.stats["search_fetched"] += 1
             key = self._require_key()
             headers = {
                 "Content-Type": "application/json",
@@ -149,7 +175,10 @@ class PlacesClient:
     def details(self, place_id: str) -> dict:
         """Full Place Details for one place ID, cached for the TTL."""
 
+        self.stats["details_requested"] += 1
+
         def fetch() -> dict:
+            self.stats["details_fetched"] += 1
             key = self._require_key()
             headers = {"X-Goog-Api-Key": key, "X-Goog-FieldMask": DETAIL_FIELDS}
             return self._do_get(DETAILS_URL.format(place_id=place_id), headers=headers)
