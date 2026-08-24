@@ -19,9 +19,30 @@ import json
 import sys
 from pathlib import Path
 
-from pipeline.scoring import Weights
-from pipeline.storage import Batch
-from pipeline.tune import compare, format_report, propose
+# Running this from another folder, or copying it out of the project on its
+# own, both break the imports below: the script needs the pipeline/ package
+# beside it. Adding the script's own directory to the path fixes the first
+# case; the guard below explains the second in English rather than a traceback.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+try:
+    from pipeline.scoring import Weights
+    from pipeline.storage import Batch
+    from pipeline.tune import compare, format_report, propose
+except ImportError as exc:
+    if "pipeline" not in str(exc):
+        raise
+    sys.exit(
+        "\ntune.py could not find the 'pipeline' package.\n\n"
+        "This is one file of a project, not a standalone script. It needs the\n"
+        "pipeline/ folder, weights.json and examples/ sitting beside it.\n\n"
+        "Get the whole project and run it from inside that folder:\n\n"
+        "  git clone -b claude/tool-build-markdown-spec-vnr7ss \\\n"
+        "      https://github.com/Bardy101/Website-Builder.git\n"
+        "  cd Website-Builder\n"
+        "  python -m pip install -r requirements.txt\n"
+        "  python tune.py --help\n"
+    )
 
 
 def parse_args(argv=None):

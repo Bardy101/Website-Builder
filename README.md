@@ -33,12 +33,46 @@ publishing. It finds and it scores.
 
 ---
 
+## Get the project
+
+These scripts are **not standalone downloads**. `find.py` imports the
+`pipeline/` package and reads `weights.json`, so it needs the whole folder.
+Downloading one file on its own gives you `ModuleNotFoundError: No module
+named 'pipeline'`.
+
+```bash
+git clone -b claude/tool-build-markdown-spec-vnr7ss \
+    https://github.com/Bardy101/Website-Builder.git
+cd Website-Builder
+pip install -r requirements.txt
+```
+
+<details>
+<summary>Windows / PowerShell</summary>
+
+```powershell
+cd $HOME\Downloads
+git clone -b claude/tool-build-markdown-spec-vnr7ss https://github.com/Bardy101/Website-Builder.git
+cd Website-Builder
+py -m pip install -r requirements.txt
+py find.py --niche physiotherapist --area Hitchin --fixture examples\sample_fixture.json
+```
+
+Use `py` (the Python launcher) rather than the full
+`C:\Program Files\Python314\python.exe` path — shorter, and it picks the
+right interpreter. No git installed? Download the ZIP from the branch page
+(**Code → Download ZIP**), extract it, and `cd` into the extracted folder.
+
+Paths in the examples below use forward slashes; PowerShell accepts either.
+</details>
+
+---
+
 ## Try it right now, with no API keys
 
 A fixture of invented businesses runs the whole stage offline:
 
 ```bash
-pip install -r requirements.txt
 ./find.py --niche physiotherapist --area Hitchin --fixture examples/sample_fixture.json
 ```
 
@@ -201,7 +235,7 @@ batches/2026-09-01_physios_hitchin/
 ## Development
 
 ```bash
-python3 -m unittest discover -s tests -t .      # 73 tests, no network needed
+python3 -m unittest discover -s tests -t .      # 75 tests, no network needed
 ```
 
 Every network client takes an injectable transport, so the whole pipeline is

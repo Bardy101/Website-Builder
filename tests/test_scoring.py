@@ -1,6 +1,7 @@
 """Tests for the lead-score table in spec section 4."""
 
 import unittest
+from pathlib import Path
 
 from pipeline.scoring import Weights, looks_like_chain, score_business
 
@@ -90,6 +91,33 @@ class TestScoring(unittest.TestCase):
         self.w.signals["no_website"] = 60
         result = score_business(business(review_count=1), self.w)
         self.assertEqual(result.breakdown["no_website"], 60)
+
+
+
+class TestWeightsLoading(unittest.TestCase):
+    """Running a CLI from another folder must not silently drop tuned weights."""
+
+    def test_falls_back_to_copy_beside_package(self):
+        import os
+        import tempfile
+
+        repo_weights = Path(__file__).resolve().parent.parent / "weights.json"
+        self.assertTrue(repo_weights.is_file(), "repo weights.json should exist")
+        cwd = os.getcwd()
+        with tempfile.TemporaryDirectory() as tmp:
+            try:
+                os.chdir(tmp)
+                loaded = Weights.load("weights.json")
+            finally:
+                os.chdir(cwd)
+        # Chain names only exist in the repo file, never in default().
+        self.assertTrue(loaded.chain_names)
+        self.assertEqual(loaded.chain_names, Weights.load(repo_weights).chain_names)
+
+    def test_truly_absent_file_uses_defaults(self):
+        loaded = Weights.load("no-such-weights-file.json")
+        self.assertEqual(loaded.chain_names, [])
+        self.assertEqual(loaded.signals["no_website"], 40)
 
 
 if __name__ == "__main__":

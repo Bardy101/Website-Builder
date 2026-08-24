@@ -28,8 +28,29 @@ import argparse
 import sys
 from pathlib import Path
 
-from pipeline.cull import REASON_CODES, gut_share, reason_counts, split_shortlist
-from pipeline.storage import Batch, utcnow
+# Running this from another folder, or copying it out of the project on its
+# own, both break the imports below: the script needs the pipeline/ package
+# beside it. Adding the script's own directory to the path fixes the first
+# case; the guard below explains the second in English rather than a traceback.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+try:
+    from pipeline.cull import REASON_CODES, gut_share, reason_counts, split_shortlist
+    from pipeline.storage import Batch, utcnow
+except ImportError as exc:
+    if "pipeline" not in str(exc):
+        raise
+    sys.exit(
+        "\ncull.py could not find the 'pipeline' package.\n\n"
+        "This is one file of a project, not a standalone script. It needs the\n"
+        "pipeline/ folder, weights.json and examples/ sitting beside it.\n\n"
+        "Get the whole project and run it from inside that folder:\n\n"
+        "  git clone -b claude/tool-build-markdown-spec-vnr7ss \\\n"
+        "      https://github.com/Bardy101/Website-Builder.git\n"
+        "  cd Website-Builder\n"
+        "  python -m pip install -r requirements.txt\n"
+        "  python cull.py --help\n"
+    )
 
 
 def parse_args(argv=None):

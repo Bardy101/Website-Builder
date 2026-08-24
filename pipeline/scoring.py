@@ -36,7 +36,14 @@ class Weights:
     def load(cls, path: str | Path = DEFAULT_WEIGHTS_PATH) -> "Weights":
         p = Path(path)
         if not p.is_file():
-            return cls.default()
+            # Fall back to the copy beside the package, so running the CLIs
+            # from another working directory still picks up tuned weights
+            # rather than silently reverting to the built-in defaults.
+            beside_package = Path(__file__).resolve().parent.parent / p.name
+            if beside_package.is_file():
+                p = beside_package
+            else:
+                return cls.default()
         data = json.loads(p.read_text(encoding="utf-8"))
         return cls(
             signals=data.get("signals", {}),

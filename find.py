@@ -18,14 +18,35 @@ import json
 import sys
 from pathlib import Path
 
-from pipeline.cache import Cache
-from pipeline.companies_house import CompaniesHouseClient
-from pipeline.config import Config
-from pipeline.discover import discover, merge_results, write_batch
-from pipeline.places import PlacesClient
-from pipeline.scoring import Weights
-from pipeline.site_checks import SiteChecker
-from pipeline.storage import Batch
+# Running this from another folder, or copying it out of the project on its
+# own, both break the imports below: the script needs the pipeline/ package
+# beside it. Adding the script's own directory to the path fixes the first
+# case; the guard below explains the second in English rather than a traceback.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+
+try:
+    from pipeline.cache import Cache
+    from pipeline.companies_house import CompaniesHouseClient
+    from pipeline.config import Config
+    from pipeline.discover import discover, merge_results, write_batch
+    from pipeline.places import PlacesClient
+    from pipeline.scoring import Weights
+    from pipeline.site_checks import SiteChecker
+    from pipeline.storage import Batch
+except ImportError as exc:
+    if "pipeline" not in str(exc):
+        raise
+    sys.exit(
+        "\nfind.py could not find the 'pipeline' package.\n\n"
+        "This is one file of a project, not a standalone script. It needs the\n"
+        "pipeline/ folder, weights.json and examples/ sitting beside it.\n\n"
+        "Get the whole project and run it from inside that folder:\n\n"
+        "  git clone -b claude/tool-build-markdown-spec-vnr7ss \\\n"
+        "      https://github.com/Bardy101/Website-Builder.git\n"
+        "  cd Website-Builder\n"
+        "  python -m pip install -r requirements.txt\n"
+        "  python find.py --help\n"
+    )
 
 
 def parse_args(argv=None):
