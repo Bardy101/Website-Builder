@@ -1,0 +1,136 @@
+{
+  "_comment": "Invented businesses for offline demo and tests. Not real. Run: ./find.py --niche physiotherapist --area Hitchin --fixture examples/sample_fixture.json --no-site-checks",
+  "places": [
+    {
+      "id": "ChIJfixture0000000001",
+      "_niche": "physiotherapist",
+      "_area": "Hitchin",
+      "displayName": { "text": "Bancroft Physio Rooms" },
+      "formattedAddress": "12 Bancroft, Hitchin SG5 1JQ, UK",
+      "addressComponents": [
+        { "longText": "12", "types": ["street_number"] },
+        { "longText": "Bancroft", "types": ["route"] },
+        { "longText": "Hitchin", "types": ["postal_town"] },
+        { "longText": "SG5 1JQ", "types": ["postal_code"] }
+      ],
+      "nationalPhoneNumber": "01462 000101",
+      "googleMapsUri": "https://maps.google.com/?cid=fixture1",
+      "rating": 4.9,
+      "userRatingCount": 74,
+      "businessStatus": "OPERATIONAL",
+      "primaryType": "physiotherapist",
+      "regularOpeningHours": { "weekdayDescriptions": ["Monday: 08:00 – 18:00"] },
+      "photos": [{ "name": "photo/1" }, { "name": "photo/2" }, { "name": "photo/3" }],
+      "reviews": [
+        { "text": { "text": "Sorted my shoulder in three sessions. Genuinely brilliant." }, "rating": 5, "publishTime": "2026-08-02T10:00:00Z" },
+        { "text": { "text": "Very thorough and never rushed." }, "rating": 5, "publishTime": "2026-07-14T10:00:00Z" }
+      ]
+    },
+    {
+      "id": "ChIJfixture0000000002",
+      "_niche": "physiotherapist",
+      "_area": "Hitchin",
+      "displayName": { "text": "Walsworth Road Sports Injury Clinic" },
+      "formattedAddress": "48 Walsworth Road, Hitchin SG4 9SX, UK",
+      "addressComponents": [
+        { "longText": "48", "types": ["street_number"] },
+        { "longText": "Walsworth Road", "types": ["route"] },
+        { "longText": "Hitchin", "types": ["postal_town"] },
+        { "longText": "SG4 9SX", "types": ["postal_code"] }
+      ],
+      "nationalPhoneNumber": "01462 000202",
+      "websiteUri": "https://www.facebook.com/walsworthsportsinjury",
+      "googleMapsUri": "https://maps.google.com/?cid=fixture2",
+      "rating": 4.6,
+      "userRatingCount": 38,
+      "businessStatus": "OPERATIONAL",
+      "primaryType": "physiotherapist",
+      "photos": [{ "name": "photo/4" }],
+      "reviews": [
+        { "text": { "text": "Got me running again after a bad ankle sprain." }, "rating": 5, "publishTime": "2026-06-20T10:00:00Z" }
+      ]
+    },
+    {
+      "id": "ChIJfixture0000000003",
+      "_niche": "physiotherapist",
+      "_area": "Hitchin",
+      "displayName": { "text": "Hitchin Osteopathy & Physiotherapy" },
+      "formattedAddress": "3 Sun Street, Hitchin SG5 1AF, UK",
+      "addressComponents": [
+        { "longText": "3", "types": ["street_number"] },
+        { "longText": "Sun Street", "types": ["route"] },
+        { "longText": "Hitchin", "types": ["postal_town"] },
+        { "longText": "SG5 1AF", "types": ["postal_code"] }
+      ],
+      "nationalPhoneNumber": "01462 000303",
+      "websiteUri": "https://hitchin-osteo-physio.co.uk",
+      "googleMapsUri": "https://maps.google.com/?cid=fixture3",
+      "rating": 4.8,
+      "userRatingCount": 52,
+      "businessStatus": "OPERATIONAL",
+      "primaryType": "physiotherapist",
+      "photos": [{ "name": "photo/5" }, { "name": "photo/6" }],
+      "reviews": [
+        { "text": { "text": "Friendly, professional, and the treatment worked." }, "rating": 5, "publishTime": "2026-08-11T10:00:00Z" }
+      ]
+    },
+    {
+      "id": "ChIJfixture0000000004",
+      "_niche": "physiotherapist",
+      "_area": "Hitchin",
+      "displayName": { "text": "Nuffield Health Hitchin Physiotherapy" },
+      "formattedAddress": "Park Way, Hitchin SG4 9XX, UK",
+      "addressComponents": [
+        { "longText": "Hitchin", "types": ["postal_town"] },
+        { "longText": "SG4 9XX", "types": ["postal_code"] }
+      ],
+      "websiteUri": "https://www.nuffieldhealth.com/hitchin",
+      "googleMapsUri": "https://maps.google.com/?cid=fixture4",
+      "rating": 4.2,
+      "userRatingCount": 210,
+      "businessStatus": "OPERATIONAL",
+      "primaryType": "physiotherapist",
+      "photos": [],
+      "reviews": []
+    },
+    {
+      "id": "ChIJfixture0000000005",
+      "_niche": "physiotherapist",
+      "_area": "Hitchin",
+      "displayName": { "text": "Old Mill Physio (closed)" },
+      "formattedAddress": "1 Old Mill Lane, Hitchin SG5 2BB, UK",
+      "addressComponents": [
+        { "longText": "Hitchin", "types": ["postal_town"] },
+        { "longText": "SG5 2BB", "types": ["postal_code"] }
+      ],
+      "googleMapsUri": "https://maps.google.com/?cid=fixture5",
+      "rating": 4.4,
+      "userRatingCount": 26,
+      "businessStatus": "CLOSED_PERMANENTLY",
+      "primaryType": "physiotherapist",
+      "photos": [],
+      "reviews": []
+    },
+    {
+      "id": "ChIJfixture0000000006",
+      "_niche": "physiotherapist",
+      "_area": "Hitchin",
+      "displayName": { "text": "New Leaf Physio" },
+      "formattedAddress": "9 Queen Street, Hitchin SG4 9TS, UK",
+      "addressComponents": [
+        { "longText": "Hitchin", "types": ["postal_town"] },
+        { "longText": "SG4 9TS", "types": ["postal_code"] }
+      ],
+      "nationalPhoneNumber": "01462 000606",
+      "googleMapsUri": "https://maps.google.com/?cid=fixture6",
+      "rating": 5.0,
+      "userRatingCount": 2,
+      "businessStatus": "OPERATIONAL",
+      "primaryType": "physiotherapist",
+      "photos": [],
+      "reviews": [
+        { "text": { "text": "Just opened, lovely space." }, "rating": 5, "publishTime": "2026-08-18T10:00:00Z" }
+      ]
+    }
+  ]
+}

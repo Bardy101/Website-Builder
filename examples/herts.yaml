@@ -1,0 +1,22 @@
+# Multi-niche / multi-town batch config.
+# Run it, go and do something else, come back to one merged, de-duplicated,
+# ranked sheet covering the whole patch:
+#
+#     ./find.py --batch-config examples/herts.yaml
+#
+# This is the version that really kills the manual trawl.
+
+label: physios-accountants
+area_label: herts
+radius: 8000        # metres, per pair unless overridden
+top_per_pair: 15    # keep this many from each niche/town before merging
+top: 30             # rows in the final merged sheet
+
+pairs:
+  - { niche: physiotherapist, area: "Hitchin, Hertfordshire" }
+  - { niche: physiotherapist, area: "Stevenage, Hertfordshire" }
+  - { niche: physiotherapist, area: "Letchworth Garden City" }
+  - { niche: physiotherapist, area: "Baldock, Hertfordshire" }
+  - { niche: physiotherapist, area: "Royston, Hertfordshire" }
+  - { niche: accountant, area: "Hitchin, Hertfordshire" }
+  - { niche: accountant, area: "Stevenage, Hertfordshire", radius: 6000 }

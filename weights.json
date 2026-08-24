@@ -1,0 +1,30 @@
+{
+  "_comment": "Lead-scoring weights for the discover stage. Keep versioned; note the batch number that produced each change. See spec sections 4 and 17.",
+  "_version": 1,
+  "_changed_by_batch": 0,
+  "signals": {
+    "no_website": 40,
+    "social_or_directory_only": 30,
+    "mobile_score_below_50": 25,
+    "no_https": 15,
+    "established_and_reputable": 15,
+    "too_few_reviews": -20
+  },
+  "thresholds": {
+    "mobile_score_poor": 50,
+    "mobile_score_dated_max": 70,
+    "established_min_reviews": 20,
+    "established_min_rating": 4.3,
+    "too_few_reviews_max": 5
+  },
+  "exclude": {
+    "non_operational": true,
+    "chain_or_franchise": true
+  },
+  "chain_names": [
+    "nuffield health", "bupa", "the physio company", "ascenti",
+    "specsavers", "boots", "well pharmacy", "vision express",
+    "mydentist", "bupa dental", "{my}dentist", "dental partners",
+    "hcml", "spire healthcare"
+  ]
+}
