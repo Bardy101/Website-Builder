@@ -232,6 +232,11 @@ class SiteContactFinder:
     max_pages: int = 4
     user_agent: str = "postal-pipeline contact-lookup"
     stats: dict = field(default_factory=lambda: {"fetched": 0, "skipped_by_robots": 0})
+    _stats_lock: object = field(default_factory=__import__("threading").Lock, repr=False)
+
+    def _bump(self, key: str) -> None:
+        with self._stats_lock:
+            self.stats[key] += 1
 
     def _get(self, url: str) -> Optional[str]:
         if self.http_get is not None:
@@ -280,12 +285,12 @@ class SiteContactFinder:
                 if len(pages_read) >= self.max_pages:
                     break
                 if not allowed(url):
-                    self.stats["skipped_by_robots"] += 1
+                    self._bump("skipped_by_robots")
                     continue
                 html = self._get(url)
                 if not html:
                     continue
-                self.stats["fetched"] += 1
+                self._bump("fetched")
                 pages_read.append(url)
                 people.extend(find_people(html))
                 emails.extend(find_emails(html))

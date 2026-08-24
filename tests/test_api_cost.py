@@ -233,5 +233,108 @@ class TestRefreshBypassesCache(unittest.TestCase):
             self.assertEqual(Cache(tmp, 30).get("ns", "k"), {"v": "new"})
 
 
+
+class TestSearchCacheSupersets(unittest.TestCase):
+    """Changing --top must not re-buy a search the cache can already answer."""
+
+    def _client_counting(self, cache, hits):
+        def post(url, *, json_body, headers):
+            if json_body.get("textQuery") == "Hitchin":
+                return {"places": [{"location": {"latitude": 51.9, "longitude": -0.28}}]}
+            hits.append(json_body)
+            return {"places": [{"id": f"p{i}"} for i in range(20)]}
+
+        return PlacesClient(api_key="k", post=post, cache=cache)
+
+    def test_smaller_request_served_from_larger_cached_search(self):
+        hits = []
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Cache(tmp, 30)
+            self._client_counting(cache, hits).search("physio", "Hitchin", max_results=75)
+            first = len(hits)
+            out = self._client_counting(cache, hits).search(
+                "physio", "Hitchin", max_results=60
+            )
+            self.assertEqual(len(hits), first)  # no new billable search
+            self.assertEqual(len(out), 20)
+
+    def test_exhausted_search_serves_any_larger_request(self):
+        """20 results from a 75 cap means the town ran dry — asking for 90
+        cannot find more, so it must not refetch."""
+        hits = []
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Cache(tmp, 30)
+            self._client_counting(cache, hits).search("physio", "Hitchin", max_results=75)
+            first = len(hits)
+            self._client_counting(cache, hits).search("physio", "Hitchin", max_results=90)
+            self.assertEqual(len(hits), first)
+
+    def test_genuinely_larger_request_refetches(self):
+        hits = []
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Cache(tmp, 30)
+
+            def post(url, *, json_body, headers):
+                if json_body.get("textQuery") == "Hitchin":
+                    return {"places": [{"location": {"latitude": 1.0, "longitude": 2.0}}]}
+                hits.append(json_body)
+                n = json_body["maxResultCount"]
+                return {"places": [{"id": f"p{len(hits)}-{i}"} for i in range(n)],
+                        "nextPageToken": "t"}
+
+            client = PlacesClient(api_key="k", post=post, cache=cache)
+            client.search("physio", "Hitchin", max_results=20)
+            before = len(hits)
+            client.search("physio", "Hitchin", max_results=40)
+            self.assertGreater(len(hits), before)
+
+
+class TestConcurrentEnrichment(unittest.TestCase):
+    """Enrichment runs threaded; results must match the serial path."""
+
+    def _run(self, workers):
+        from tests.test_discover import StubChecker
+
+        client = make_client()
+        return discover(
+            niche="physiotherapist", area="Hitchin", places_client=client,
+            site_checker=StubChecker(), weights=Weights.load(ROOT / "weights.json"),
+            top=25, workers=workers,
+        )
+
+    def test_threaded_matches_serial(self):
+        serial = self._run(workers=1)
+        threaded = self._run(workers=8)
+        self.assertEqual(
+            [(b["name"], b["lead_score"]) for b in serial.businesses],
+            [(b["name"], b["lead_score"]) for b in threaded.businesses],
+        )
+
+    def test_one_failing_site_does_not_kill_the_run(self):
+        class ExplodingChecker:
+            def check(self, website):
+                if website:  # the Facebook-only clinic has one
+                    raise OSError("TLS handshake exploded")
+                from pipeline.site_checks import SiteCheck
+
+                c = SiteCheck(False, False)
+                c.verdict = "none"
+                return c
+
+        client = make_client()
+        result = discover(
+            niche="physiotherapist", area="Hitchin", places_client=client,
+            site_checker=ExplodingChecker(),
+            weights=Weights.load(ROOT / "weights.json"), top=25, workers=8,
+        )
+        names = {b["name"] for b in result.businesses}
+        self.assertIn("Bancroft Physio Rooms", names)  # unaffected rows survive
+        broken = next(b for b in result.businesses
+                      if b["name"] == "Walsworth Road Sports Injury Clinic")
+        self.assertIn("enrich_error", broken)
+        # The URL-only baseline verdict still stands for the broken row.
+        self.assertEqual(broken["site_score"]["verdict"], "social_only")
+
+
 if __name__ == "__main__":
     unittest.main()

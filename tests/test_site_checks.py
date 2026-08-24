@@ -57,6 +57,11 @@ class TestVerdict(unittest.TestCase):
         c = SiteCheck(True, False, https=True, viewport=False, mobile_score=None)
         self.assertEqual(verdict_from(c), "dated")
 
+    def test_no_score_and_no_demotion_is_unknown_not_fine(self):
+        """No evidence must never produce the weakest-lead verdict."""
+        c = SiteCheck(True, False, https=True, viewport=True, mobile_score=None)
+        self.assertEqual(verdict_from(c), "unknown")
+
 
 class TestSiteChecker(unittest.TestCase):
     def test_no_website_skips_network(self):
@@ -95,8 +100,61 @@ class TestSiteChecker(unittest.TestCase):
         result = checker.check("https://down.example")
         self.assertIsNone(result.https)
         self.assertIsNone(result.mobile_score)
-        # Unknown must never be rated worse than it is, nor silently "fine"
-        self.assertEqual(result.verdict, "fine")
+        # Nothing could be established, so nothing is claimed.
+        self.assertEqual(result.verdict, "unknown")
+
+
+
+class TestPagespeedFailureCaching(unittest.TestCase):
+    """A page Lighthouse cannot score is cached; a transport error is not."""
+
+    def test_unscorable_page_is_cached_and_not_retried(self):
+        import tempfile
+
+        from pipeline.cache import Cache
+
+        calls = []
+
+        def pagespeed(url):
+            calls.append(url)
+            return {"scored": True, "score": None}  # ran, no score possible
+
+        with tempfile.TemporaryDirectory() as tmp:
+            for _ in range(2):
+                checker = SiteChecker(
+                    http_get=lambda u: (200, "https://x.co.uk", "<html></html>"),
+                    pagespeed=pagespeed,
+                    cache=Cache(tmp),
+                )
+                self.assertIsNone(checker.check("https://x.co.uk").mobile_score)
+            self.assertEqual(len(calls), 1)
+
+    def test_transport_error_is_retried_next_run(self):
+        import tempfile
+
+        from pipeline.cache import Cache
+
+        calls = []
+
+        def pagespeed(url):
+            calls.append(url)
+            return None  # quota blip / network error
+
+        with tempfile.TemporaryDirectory() as tmp:
+            for _ in range(2):
+                SiteChecker(
+                    http_get=lambda u: (200, "https://x.co.uk", "<html></html>"),
+                    pagespeed=pagespeed,
+                    cache=Cache(tmp),
+                ).check("https://x.co.uk")
+            self.assertEqual(len(calls), 2)
+
+    def test_bare_int_from_a_test_double_still_works(self):
+        checker = SiteChecker(
+            http_get=lambda u: (200, "https://x.co.uk", "<html></html>"),
+            pagespeed=lambda u: 42,
+        )
+        self.assertEqual(checker.check("https://x.co.uk").mobile_score, 42)
 
 
 if __name__ == "__main__":

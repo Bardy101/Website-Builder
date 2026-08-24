@@ -13,6 +13,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
+import threading
 import re
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -73,7 +75,12 @@ class Cache:
             "key": key,
             "data": data,
         }
-        path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        # Enrichment runs on worker threads, and two businesses can share a
+        # website (duplicate listings) and so a cache key. write_text is not
+        # atomic; a temp file + os.replace is, on POSIX and Windows both.
+        tmp = path.with_name(f"{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
+        tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        os.replace(tmp, path)
 
     def get_or_fetch(
         self, namespace: str, key: str, fetch: Callable[[], Any]

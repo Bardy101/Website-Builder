@@ -42,6 +42,7 @@ def discover(
     search_limit: Optional[int] = None,
     progress: Optional[Callable[[str], None]] = None,
     seen_place_ids: Optional[set[str]] = None,
+    workers: int = 8,
 ) -> DiscoverResult:
     """Search, enrich, score and rank candidates for one niche + area.
 
@@ -60,6 +61,7 @@ def discover(
 
     businesses: list[dict] = []
     excluded: list[dict] = []
+    pending: list[dict] = []
 
     for stub in stubs:
         place_id = stub.get("id")
@@ -124,30 +126,22 @@ def discover(
             "https": None,
             "viewport": None,
         }
-        if site_checker is not None:
-            check = site_checker.check(business.get("website"))
-            business["site_score"] = {
-                "verdict": check.verdict,
-                "mobile_score": check.mobile_score,
-                "https": check.https,
-                "viewport": check.viewport,
-            }
+        pending.append(business)
 
-        if companies_house is not None:
-            found = companies_house.lookup(
-                business.get("name") or "",
-                (business.get("address") or {}).get("postcode"),
-            )
-            business["owner"] = found["owner"]
-            business["company"] = found["company"]
+    # Enrichment is the slow part — PageSpeed alone runs 20-30s per site and
+    # the contact lookup fetches several pages. Every business's lookups are
+    # independent of every other's, so they run concurrently; caches write
+    # distinct files per key, which keeps this safe.
+    _enrich_all(
+        pending,
+        site_checker=site_checker,
+        companies_house=companies_house,
+        site_contacts=site_contacts,
+        workers=workers,
+        say=say,
+    )
 
-        # Spec section 5, step 2: the business's own About page. Companies
-        # House says who owns it; the website says who runs it.
-        if site_contacts is not None and business.get("website"):
-            site_found = site_contacts.find(business["website"]) or {}
-            business["site_contact"] = site_found.get("contact")
-            business["site_emails"] = site_found.get("emails", [])
-
+    for business in pending:
         business["addressee"] = decide_addressee(
             business.get("owner"),
             business.get("site_contact"),
@@ -172,6 +166,72 @@ def discover(
     top_businesses = businesses[:top]
     rows = [business_to_row(b) for b in top_businesses]
     return DiscoverResult(rows=rows, businesses=top_businesses, excluded=excluded)
+
+
+def _enrich_one(business, site_checker, companies_house, site_contacts) -> None:
+    """All slow lookups for one business. Runs on a worker thread."""
+    if site_checker is not None:
+        check = site_checker.check(business.get("website"))
+        business["site_score"] = {
+            "verdict": check.verdict,
+            "mobile_score": check.mobile_score,
+            "https": check.https,
+            "viewport": check.viewport,
+        }
+
+    if companies_house is not None:
+        found = companies_house.lookup(
+            business.get("name") or "",
+            (business.get("address") or {}).get("postcode"),
+        )
+        business["owner"] = found["owner"]
+        business["company"] = found["company"]
+
+    # Spec section 5, step 2: the business's own About page. Companies
+    # House says who owns it; the website says who runs it.
+    if site_contacts is not None and business.get("website"):
+        site_found = site_contacts.find(business["website"]) or {}
+        business["site_contact"] = site_found.get("contact")
+        business["site_emails"] = site_found.get("emails", [])
+
+
+def _enrich_all(
+    pending: list[dict],
+    *,
+    site_checker,
+    companies_house,
+    site_contacts,
+    workers: int,
+    say: Callable[[str], None],
+) -> None:
+    """Run _enrich_one across all businesses, concurrently when it helps.
+
+    A failure in one business's lookups leaves that business unenriched
+    (fields stay null) rather than killing the whole run.
+    """
+    if not pending:
+        return
+    if site_checker is None and companies_house is None and site_contacts is None:
+        return
+
+    def safely(business: dict) -> None:
+        try:
+            _enrich_one(business, site_checker, companies_house, site_contacts)
+        except Exception as exc:  # noqa: BLE001 — one bad site must not end the run
+            business["enrich_error"] = str(exc)
+
+    if workers <= 1 or len(pending) == 1:
+        for business in pending:
+            safely(business)
+            say(f"  checked      {business.get('name')}")
+        return
+
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    with ThreadPoolExecutor(max_workers=min(workers, len(pending))) as pool:
+        futures = {pool.submit(safely, b): b for b in pending}
+        for future in as_completed(futures):
+            say(f"  checked      {futures[future].get('name')}")
 
 
 def merge_results(results: Iterable[DiscoverResult]) -> DiscoverResult:

@@ -81,6 +81,7 @@ def _new_stats() -> dict:
     return {
         "search_requested": 0,
         "search_fetched": 0,
+        "area_fetched": 0,
         "details_requested": 0,
         "details_fetched": 0,
     }
@@ -141,10 +142,25 @@ class PlacesClient:
         Returns a list of raw place stubs (id + displayName + address).
         """
         query = f"{niche} in {area}"
-        cache_key = f"{query}|r={radius_m}|n={max_results}"
+        # max_results is deliberately NOT in the key: a cached response is a
+        # superset or an exhausted search, either of which can serve a
+        # smaller request. Keying on it meant `--top 30` after `--top 25`
+        # bought a fresh billable search for the same query and radius.
+        cache_key = f"{query}|r={radius_m}"
 
         self.stats["search_requested"] += 1
         centre = self.area_center(area) if radius_m else None
+
+        if self.cache is not None:
+            cached = self.cache.get("places_search", cache_key)
+            if isinstance(cached, dict):
+                places = cached.get("places") or []
+                requested = cached.get("requested", 0)
+                # Reuse when we asked for at least this much before, or the
+                # search ran dry before hitting its cap (fetching again with
+                # a bigger cap cannot find more).
+                if max_results <= requested or len(places) < requested:
+                    return places[:max_results]
 
         def fetch() -> list[dict]:
             self.stats["search_fetched"] += 1
@@ -178,9 +194,14 @@ class PlacesClient:
                     break
             return results[:max_results]
 
-        if self.cache is None:
-            return fetch()
-        return self.cache.get_or_fetch("places_search", cache_key, fetch)
+        results = fetch()
+        if self.cache is not None:
+            self.cache.set(
+                "places_search",
+                cache_key,
+                {"requested": max_results, "places": results},
+            )
+        return results
 
     def area_center(self, area: str) -> Optional[dict]:
         """Coordinates for a town, so a radius can be applied to the search.
@@ -193,6 +214,7 @@ class PlacesClient:
         def fetch() -> Optional[dict]:
             if not self.api_key:
                 return None
+            self.stats["area_fetched"] += 1
             headers = {
                 "Content-Type": "application/json",
                 "X-Goog-Api-Key": self.api_key,

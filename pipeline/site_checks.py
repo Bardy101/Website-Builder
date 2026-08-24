@@ -88,11 +88,12 @@ def verdict_from(
         if check.mobile_score < mobile_score_dated_max or check.viewport is False:
             return "dated"
         return "fine"
-    # No mobile score available (PageSpeed failed / no key): fall back to
-    # the cheap signals so we never silently rate an unknown site "fine".
+    # No mobile score available (PageSpeed failed / no key): the cheap
+    # signals can still demote, but nothing here can prove a site "fine".
+    # Guessing "fine" would bury a potentially good lead; say "unknown".
     if check.viewport is False:
         return "dated"
-    return "fine"
+    return "unknown"
 
 
 class SiteChecker:
@@ -133,7 +134,15 @@ class SiteChecker:
         )
         return resp.status_code, resp.url, resp.text
 
-    def _default_pagespeed(self, url: str) -> Optional[int]:
+    def _default_pagespeed(self, url: str):
+        """Return {"scored": True, "score": int|None} on a completed run,
+        or None on a transport/quota error.
+
+        The distinction matters for caching: "Lighthouse ran and could not
+        score this page" is a durable fact worth caching (retrying costs a
+        60s timeout every run), while a quota blip or network error is
+        transient and must not be remembered for 30 days.
+        """
         import requests
 
         params = {"url": url, "strategy": "mobile", "category": "performance"}
@@ -145,7 +154,8 @@ class SiteChecker:
                 params=params,
                 timeout=60,
             )
-            resp.raise_for_status()
+            if resp.status_code != 200:
+                return None
             data = resp.json()
             score = (
                 data.get("lighthouseResult", {})
@@ -153,7 +163,10 @@ class SiteChecker:
                 .get("performance", {})
                 .get("score")
             )
-            return round(score * 100) if score is not None else None
+            return {
+                "scored": True,
+                "score": round(score * 100) if score is not None else None,
+            }
         except Exception:
             return None
 
@@ -195,13 +208,18 @@ class SiteChecker:
                     url if "://" in url else f"https://{url}"
                 )
             except Exception:
-                # Retry once over http if https failed outright.
+                # Retry once over plain http, but only when that is actually
+                # a different URL — retrying an http:// site as itself just
+                # burns a second timeout on a dead host.
+                fallback = (
+                    url.replace("https://", "http://", 1)
+                    if url.startswith("https://")
+                    else (f"http://{url}" if "://" not in url else None)
+                )
+                if fallback is None:
+                    return {"https": None, "viewport": None}
                 try:
-                    status, final_url, html = self._http_get(
-                        url.replace("https://", "http://")
-                        if "://" in url
-                        else f"http://{url}"
-                    )
+                    status, final_url, html = self._http_get(fallback)
                 except Exception:
                     return {"https": None, "viewport": None}
             https = str(final_url).lower().startswith("https://")
@@ -216,8 +234,18 @@ class SiteChecker:
 
     def _mobile_score(self, url: str) -> Optional[int]:
         target = url if "://" in url else f"https://{url}"
+
+        def unwrap(result) -> Optional[int]:
+            # Injected test doubles may return a bare int; the real
+            # implementation returns {"scored": True, "score": ...}.
+            if isinstance(result, dict):
+                return result.get("score")
+            return result
+
         if self.cache is None:
-            return self._pagespeed(target)
-        return self.cache.get_or_fetch(
-            "pagespeed", target, lambda: self._pagespeed(target)
+            return unwrap(self._pagespeed(target))
+        # get_or_fetch skips caching None, so transport errors retry next
+        # run while completed-but-unscorable results are remembered.
+        return unwrap(
+            self.cache.get_or_fetch("pagespeed", target, lambda: self._pagespeed(target))
         )

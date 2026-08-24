@@ -257,6 +257,7 @@ genuinely new:
 |---|---|
 | Run Hitchin, radius 8000 | Search + one Details per candidate |
 | **Re-run identical** | **Zero** — everything served from cache |
+| Change `--top` (same or smaller reach) | Zero — a cached search serves any smaller request, and one that ran dry serves any larger one |
 | Widen to radius 10000 | One search. Details only for businesses not seen before |
 | Re-run at 10000 again | Zero |
 | `--refresh` | Everything again, deliberately |
@@ -296,7 +297,14 @@ written and Google has changed them before.
 
 Useful flags: `--no-site-checks` (skip PageSpeed, much faster),
 `--no-owner-lookup`, `--no-site-contacts`, `--weights other.json`,
-`--fixture` (offline), `--refresh` (ignore the cache and re-fetch).
+`--fixture` (offline), `--refresh` (ignore the cache and re-fetch),
+`--workers N` (concurrent lookups, default 8).
+
+The slow lookups — PageSpeed, page fetches, Companies House, contact pages —
+run concurrently across businesses (they're independent), so a first run over
+25 candidates takes a couple of minutes rather than fifteen. A page Lighthouse
+completes on but cannot score is cached like a score; a transport or quota
+error is retried next run instead of being remembered for 30 days.
 
 **On `--radius`:** it's applied as a *location bias*, not a hard boundary.
 Google weights results towards the circle rather than excluding everything
@@ -384,7 +392,7 @@ PageSpeed call.
 | `poor` | Real site, but slow on mobile or no HTTPS |
 | `dated` | Middling score, or no mobile viewport |
 | `fine` | Genuinely good enough — a weak lead |
-| `unknown` | Site checks were skipped; not judged either way |
+| `unknown` | Couldn't be measured (checks skipped, or PageSpeed unavailable) — not judged either way |
 
 Unknown is never silently rated `fine`. If a field can't be established it stays
 `null` — never guessed. A wrong owner name on a letter is worse than no name.
@@ -477,7 +485,7 @@ batches/2026-09-01_physios_hitchin/
 ## Development
 
 ```bash
-python3 -m unittest discover -s tests -t .      # 161 tests, no network needed
+python3 -m unittest discover -s tests -t .      # 170 tests, no network needed
 ```
 
 Every network client takes an injectable transport, so the whole pipeline is

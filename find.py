@@ -85,6 +85,10 @@ def parse_args(argv=None):
         help="JSON fixture of Places responses; runs fully offline, no API key needed",
     )
     p.add_argument(
+        "--workers", type=int, default=8,
+        help="concurrent site/owner lookups (default 8; 1 = one at a time)",
+    )
+    p.add_argument(
         "--refresh",
         action="store_true",
         help="ignore the cache and re-fetch everything (costs real API calls)",
@@ -187,6 +191,7 @@ def main(argv=None) -> int:
                     top=top_each,
                     progress=say,
                     seen_place_ids=seen,
+                    workers=args.workers,
                 )
             )
         result = merge_results(results)
@@ -207,6 +212,7 @@ def main(argv=None) -> int:
             radius_m=args.radius,
             top=args.top,
             progress=say,
+            workers=args.workers,
         )
         batch = Batch.create(
             config.batches_dir, niche=args.niche, area=args.area, name=args.batch_name
@@ -250,7 +256,7 @@ def main(argv=None) -> int:
 
     stats = getattr(places, "stats", None)
     if stats and not args.fixture:
-        searches = stats["search_fetched"]
+        searches = stats["search_fetched"] + stats.get("area_fetched", 0)
         details = stats["details_fetched"]
         cached = (stats["search_requested"] - searches) + (
             stats["details_requested"] - details
