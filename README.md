@@ -178,8 +178,16 @@ Restriction changes can take a few minutes to take effect, so if a test fails
 right after an edit, wait and run it again.
 - **PageSpeed Insights** — same console, enable the PageSpeed Insights API.
   Free; the same key usually works for both.
-- **Companies House** — [developer.company-information.service.gov.uk](https://developer.company-information.service.gov.uk/):
-  sign up, create an application, copy the key. Free.
+- **Companies House** — nothing to do with Google; it's a UK government
+  service with its own registration.
+  [developer.company-information.service.gov.uk](https://developer.company-information.service.gov.uk/)
+  → sign up → **Manage applications** → create an application → open it →
+  **Create new key**. Free.
+
+  Two choices to get right: pick the **live** environment, not test/sandbox
+  (the sandbox holds invented companies, so owner lookups would return
+  nonsense), and pick client type **REST**, not Streaming or OAuth2 — those
+  are different products that won't authenticate here.
 
 Each API costs nothing until you use it, and results are cached for 30 days,
 so re-running a niche doesn't re-spend.

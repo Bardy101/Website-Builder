@@ -286,8 +286,12 @@ KEY_INFO = [
         "Companies House",
         "Optional. Fills in owner names so letters open 'Dear Sarah'\n"
         "     instead of 'FAO the Owner'.",
-        "https://developer.company-information.service.gov.uk/ -> sign up ->\n"
-        "     create an application -> API key. Free.",
+        "Nothing to do with Google — it is a UK government service.\n"
+        "     https://developer.company-information.service.gov.uk/\n"
+        "     Sign up -> Manage applications -> Create an application, and\n"
+        "     choose LIVE, not test/sandbox (sandbox holds invented\n"
+        "     companies). Open the application -> Create new key -> client\n"
+        "     type REST, not Streaming or OAuth2. Free.",
     ),
 ]
 
