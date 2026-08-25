@@ -459,6 +459,35 @@ from a neighbour's radius.
 
 ---
 
+## Batches from earlier versions
+
+**Every menu option works on batches you've already created. No re-scanning,
+no new API calls.** The stored records are the source of truth, and each
+action reads them rather than the API:
+
+| Action | On an older batch |
+|---|---|
+| Review a shortlist | Works. A shortlist written before the contact columns existed shows `contact_check` as `n/a`, and addresses to the owner it already knows |
+| Combine batches | Works, and **upgrades**: re-scored under the current weights, with an addressee derived from the stored owner |
+| Open a shortlist | Works |
+| Tune the scoring | Works — reads `approved.csv` and `rejections.jsonl` |
+
+Combining is the cheap upgrade path. It re-scores every record with the
+current `weights.json`, so a batch scored under the old cliff rules gets the
+graded band applied for free — a business stored at 15 comes out at 27 — and
+it fills in `address_to` from the owner already on file. Combine a single
+batch with no filters if all you want is the re-rank.
+
+**The one thing it can't back-fill is data that was never fetched.** A batch
+predating the website contact lookup has no `site_contact`, so those columns
+stay blank however often you combine. To fill them, run **Find prospects**
+again with the same niche and town: the Places data is served from the 30-day
+cache (zero Google calls) and only the contact pages are fetched, which Google
+doesn't charge for. That writes a new batch folder rather than editing the old
+one.
+
+---
+
 ## Who gets the letter?
 
 Two sources disagree more often than you'd expect:
@@ -545,7 +574,7 @@ batches/2026-09-01_physios_hitchin/
 ## Development
 
 ```bash
-python3 -m unittest discover -s tests -t .      # 193 tests, no network needed
+python3 -m unittest discover -s tests -t .      # 203 tests, no network needed
 ```
 
 Every network client takes an injectable transport, so the whole pipeline is

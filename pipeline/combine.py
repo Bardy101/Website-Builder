@@ -17,6 +17,7 @@ from __future__ import annotations
 
 from typing import Iterable, Optional
 
+from .addressee import decide as decide_addressee
 from .scoring import Weights, score_business
 from .storage import Batch, business_to_row
 
@@ -63,6 +64,15 @@ def combine_batches(
             record["lead_score"] = result.score
             record["score_breakdown"] = result.breakdown
             record["combined_from"] = batch.path.name
+            # Recompute rather than copy: batches written before the website
+            # contact lookup existed have no addressee at all, and the
+            # decision is pure logic over the owner/site_contact already
+            # stored — so an old record still gets a usable address_to.
+            record["addressee"] = decide_addressee(
+                record.get("owner"),
+                record.get("site_contact"),
+                company_type=(record.get("company") or {}).get("type", "unknown"),
+            )
             place_id = record.get("place_id")
             if not place_id:
                 continue

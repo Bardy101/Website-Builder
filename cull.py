@@ -89,10 +89,13 @@ def prompt_decisions(rows: list[dict], keep_target: int) -> dict[str, str]:
         )
         check = row.get("contact_check", "")
         marker = "  <-- check this" if check in ("differ", "likely_same", "site_only") else ""
-        print(
-            f"    address to: {row.get('address_to') or 'FAO the Owner'}"
-            f"  [{check or 'n/a'}]{marker}"
+        # Shortlists written before the contact columns existed have no
+        # address_to; the owner column still names someone, so use it rather
+        # than falling all the way back to "FAO the Owner".
+        address_to = (
+            row.get("address_to") or row.get("owner_name") or "FAO the Owner"
         )
+        print(f"    address to: {address_to}  [{check or 'n/a'}]{marker}")
         if row.get("owner_name") or row.get("site_contact"):
             print(
                 f"      register: {row.get('owner_name') or '-'}"
