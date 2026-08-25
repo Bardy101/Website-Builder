@@ -162,6 +162,31 @@ class PlacesClient:
                 if max_results <= requested or len(places) < requested:
                     return places[:max_results]
 
+            # Entries written before the key dropped its "|n=<max>" suffix
+            # stored a bare list. That search was paid for, so reuse it and
+            # rewrite it under the current key rather than charging again.
+            legacy = self.cache.find_by_key_prefix(
+                "places_search", f"{query}|r={radius_m}|n="
+            )
+            if legacy is not None:
+                legacy_key, legacy_data = legacy
+                places = (
+                    legacy_data if isinstance(legacy_data, list)
+                    else (legacy_data or {}).get("places") or []
+                )
+                try:
+                    requested = int(legacy_key.rpartition("|n=")[2])
+                except ValueError:
+                    requested = len(places)
+                if max_results <= requested or len(places) < requested:
+                    self.cache.set(
+                        "places_search",
+                        cache_key,
+                        {"requested": requested, "places": places,
+                         "niche": niche, "area": area, "radius_m": radius_m},
+                    )
+                    return places[:max_results]
+
         def fetch() -> list[dict]:
             self.stats["search_fetched"] += 1
             key = self._require_key()

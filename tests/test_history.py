@@ -114,5 +114,107 @@ class TestFindFlowHasNoDemoQuestion(unittest.TestCase):
         self.assertIn("demo = not has_key", source)
 
 
+
+def write_legacy_entry(root, name, *, key, days_ago, places=3):
+    """The shape written before the search cache key dropped its |n= suffix:
+    a bare list under `data`, and max_results baked into the key."""
+    folder = Path(root) / "places_search"
+    folder.mkdir(parents=True, exist_ok=True)
+    (folder / name).write_text(json.dumps({
+        "fetched": (datetime.now(timezone.utc) - timedelta(days=days_ago)).isoformat(),
+        "key": key,
+        "data": [{"id": f"ChIJ{i}"} for i in range(places)],
+    }), encoding="utf-8")
+
+
+class TestPreKeyChangeEntries(unittest.TestCase):
+    """Searches paid for before the cache key changed must stay visible.
+
+    Changing how keys are built orphaned these entries: the history showed
+    nothing and a repeat search re-billed for data already bought.
+    """
+
+    def test_legacy_entry_is_listed(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            write_legacy_entry(tmp, "old.json",
+                               key="physiotherapist in Hitchin|r=8000|n=75",
+                               days_ago=0, places=12)
+            found = past_searches(tmp)
+            self.assertEqual(len(found), 1)
+            self.assertEqual(found[0].niche, "physiotherapist")
+            self.assertEqual(found[0].area, "Hitchin")
+            self.assertEqual(found[0].radius_m, 8000)
+            self.assertEqual(found[0].results, 12)
+
+    def test_legacy_radius_is_not_confused_by_the_n_suffix(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            write_legacy_entry(tmp, "old.json", key="plumber in Royston|r=6000|n=30",
+                               days_ago=1)
+            self.assertEqual(past_searches(tmp)[0].radius_m, 6000)
+
+    def test_expired_legacy_entry_is_still_excluded(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            write_legacy_entry(tmp, "old.json", key="a in X|r=1|n=5", days_ago=45)
+            self.assertEqual(past_searches(tmp), [])
+
+
+class TestLegacyEntriesAreStillReused(unittest.TestCase):
+    """The paid-for search must serve the repeat, not just appear in a list."""
+
+    def _client(self, cache, billed):
+        from pipeline.places import PlacesClient
+
+        def post(url, *, json_body, headers):
+            query = json_body.get("textQuery")
+            if query == "Hitchin":
+                return {"places": [{"location": {"latitude": 51.9, "longitude": -0.3}}]}
+            billed.append(query)
+            return {"places": [{"id": "freshly-billed"}]}
+
+        return PlacesClient(api_key="k", post=post, cache=cache)
+
+    def test_repeat_search_costs_nothing_and_returns_the_cached_places(self):
+        from pipeline.cache import Cache
+
+        with tempfile.TemporaryDirectory() as tmp:
+            write_legacy_entry(tmp, "old.json",
+                               key="physiotherapist in Hitchin|r=8000|n=75",
+                               days_ago=0, places=12)
+            billed = []
+            got = self._client(Cache(tmp, 30), billed).search(
+                "physiotherapist", "Hitchin", radius_m=8000, max_results=75)
+            self.assertEqual(billed, [])
+            self.assertEqual(len(got), 12)
+
+    def test_legacy_entry_is_upgraded_to_the_current_key(self):
+        from pipeline.cache import Cache
+
+        with tempfile.TemporaryDirectory() as tmp:
+            write_legacy_entry(tmp, "old.json",
+                               key="physiotherapist in Hitchin|r=8000|n=75",
+                               days_ago=0, places=12)
+            billed = []
+            self._client(Cache(tmp, 30), billed).search(
+                "physiotherapist", "Hitchin", radius_m=8000, max_results=75)
+            # Written under the current key, so later runs hit it directly.
+            upgraded = Cache(tmp, 30).get(
+                "places_search", "physiotherapist in Hitchin|r=8000")
+            self.assertIsInstance(upgraded, dict)
+            self.assertEqual(len(upgraded["places"]), 12)
+            self.assertEqual(upgraded["niche"], "physiotherapist")
+
+    def test_a_genuinely_different_search_still_bills(self):
+        from pipeline.cache import Cache
+
+        with tempfile.TemporaryDirectory() as tmp:
+            write_legacy_entry(tmp, "old.json",
+                               key="physiotherapist in Hitchin|r=8000|n=75",
+                               days_ago=0, places=12)
+            billed = []
+            self._client(Cache(tmp, 30), billed).search(
+                "plumber", "Hitchin", radius_m=8000, max_results=75)
+            self.assertEqual(len(billed), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

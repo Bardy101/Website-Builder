@@ -53,6 +53,10 @@ def _parse_key(key: str) -> Optional[tuple[str, str, int]]:
     """
     if "|r=" not in key:
         return None
+    # Older keys carried a trailing "|n=<max_results>"; drop it before
+    # reading the radius, or the int() below fails and the entry vanishes.
+    if "|n=" in key:
+        key = key.rpartition("|n=")[0]
     query, _, radius = key.rpartition("|r=")
     if " in " not in query:
         return None
@@ -76,10 +80,15 @@ def past_searches(cache_dir: str | Path, *, ttl_days: int = 30) -> list[PastSear
         except (OSError, json.JSONDecodeError):
             continue
         data = payload.get("data")
-        if not isinstance(data, dict):
+        # Older entries stored a bare list of places rather than a dict.
+        places = data if isinstance(data, list) else (
+            data.get("places") if isinstance(data, dict) else None
+        )
+        if places is None:
             continue
 
-        niche, area, radius = data.get("niche"), data.get("area"), data.get("radius_m")
+        meta = data if isinstance(data, dict) else {}
+        niche, area, radius = meta.get("niche"), meta.get("area"), meta.get("radius_m")
         if not (niche and area and radius):
             parsed = _parse_key(payload.get("key", ""))
             if not parsed:
@@ -101,7 +110,7 @@ def past_searches(cache_dir: str | Path, *, ttl_days: int = 30) -> list[PastSear
 
         entry = PastSearch(
             niche=str(niche), area=str(area), radius_m=int(radius),
-            fetched=fetched, results=len(data.get("places") or []),
+            fetched=fetched, results=len(places),
         )
         key = (entry.niche.lower(), entry.area.lower(), entry.radius_m)
         existing = found.get(key)

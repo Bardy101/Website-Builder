@@ -82,6 +82,34 @@ class Cache:
         tmp.write_text(json.dumps(payload, indent=2), encoding="utf-8")
         os.replace(tmp, path)
 
+    def find_by_key_prefix(self, namespace: str, prefix: str):
+        """Newest unexpired entry whose stored key starts with ``prefix``.
+
+        Returns (key, data) or None. This exists so entries written under an
+        older key format can still be reused: the data was paid for, and a
+        change to how we build keys must not quietly re-bill for it.
+        """
+        folder = self.root / namespace
+        if not folder.is_dir():
+            return None
+        best = None
+        for path in folder.glob("*.json"):
+            try:
+                payload = json.loads(path.read_text(encoding="utf-8"))
+                key = payload["key"]
+                fetched = datetime.fromisoformat(payload["fetched"])
+            except (OSError, json.JSONDecodeError, KeyError, ValueError):
+                continue
+            if not key.startswith(prefix):
+                continue
+            if fetched.tzinfo is None:
+                fetched = fetched.replace(tzinfo=timezone.utc)
+            if datetime.now(timezone.utc) - fetched > self.ttl:
+                continue
+            if best is None or fetched > best[0]:
+                best = (fetched, key, payload.get("data"))
+        return (best[1], best[2]) if best else None
+
     def get_or_fetch(
         self, namespace: str, key: str, fetch: Callable[[], Any]
     ) -> Any:

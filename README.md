@@ -128,6 +128,11 @@ value, so the run is free by construction. The list is read from the cache
 itself — the same store that decides whether you're billed — and entries past
 the 30-day expiry are left out, because repeating those *would* cost.
 
+Searches cached by earlier versions are listed too, and reused rather than
+re-billed: they were paid for, and a change to how cache keys are built must
+not quietly charge for them again. The first run that touches one rewrites it
+under the current key.
+
 Everything below is the same functionality driven from the command line, if
 you'd rather script it.
 
@@ -646,7 +651,7 @@ batches/2026-09-01_physios_hitchin/
 ## Development
 
 ```bash
-python3 -m unittest discover -s tests -t .      # 215 tests, no network needed
+python3 -m unittest discover -s tests -t .      # 221 tests, no network needed
 ```
 
 Every network client takes an injectable transport, so the whole pipeline is
