@@ -153,5 +153,78 @@ class TestEnvSetup(unittest.TestCase):
         self.assertEqual(values["GOOGLE_PLACES_API_KEY"], "quoted-key")
 
 
+
+class TestMenuStructure(unittest.TestCase):
+    """Setup lives in its own submenu; the main menu is the daily workflow."""
+
+    def test_setup_actions_are_not_on_the_main_menu(self):
+        import run
+
+        main_actions = {fn for _, _, fn in run.MENU}
+        for setup_fn in (run.action_check, run.action_keys, run.action_test_keys):
+            self.assertNotIn(setup_fn, main_actions)
+
+    def test_config_submenu_holds_the_three_setup_actions(self):
+        import run
+
+        config_actions = [fn for _, _, fn in run.CONFIG_MENU]
+        self.assertEqual(
+            config_actions, [run.action_check, run.action_keys, run.action_test_keys]
+        )
+
+    def test_config_submenu_keys_are_unique(self):
+        import run
+
+        keys = [key for key, _, _ in run.CONFIG_MENU]
+        self.assertEqual(len(keys), len(set(keys)))
+
+    def test_submenu_action_paces_itself(self):
+        import run
+
+        self.assertTrue(getattr(run.action_config, "handles_own_pause", False))
+
+    def test_main_menu_covers_the_workflow(self):
+        import run
+
+        labels = " ".join(label.lower() for _, label, _ in run.MENU)
+        for word in ("find", "review", "combine", "open", "tune", "setup"):
+            self.assertIn(word, labels)
+
+
+class TestPairsConfig(unittest.TestCase):
+    """The menu writes the multi-pair YAML so nobody authors one by hand."""
+
+    def test_yaml_round_trips_through_find(self):
+        import find
+        import run
+
+        path = run.write_pairs_config([
+            ("physiotherapist", "Hitchin"),
+            ("accountant", "Stevenage, Hertfordshire"),
+        ])
+        try:
+            cfg = find.load_batch_config(str(path))
+            self.assertEqual(
+                [(p["niche"], p["area"]) for p in cfg["pairs"]],
+                [("physiotherapist", "Hitchin"),
+                 ("accountant", "Stevenage, Hertfordshire")],
+            )
+            self.assertEqual(cfg["label"], "physiotherapist-accountant")
+        finally:
+            path.unlink()
+
+    def test_duplicate_niches_appear_once_in_the_label(self):
+        import run
+
+        path = run.write_pairs_config([
+            ("physiotherapist", "Hitchin"),
+            ("physiotherapist", "Stevenage"),
+        ])
+        try:
+            self.assertIn("label: physiotherapist\n", path.read_text(encoding="utf-8"))
+        finally:
+            path.unlink()
+
+
 if __name__ == "__main__":
     unittest.main()

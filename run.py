@@ -118,6 +118,31 @@ def choose_batch(action: str) -> Path | None:
 # -- actions ---------------------------------------------------------------
 
 
+
+def write_pairs_config(pairs: list[tuple[str, str]]):
+    """Write a temporary batch-config YAML for a multi-pair find run."""
+    import tempfile
+
+    from pipeline.storage import slugify
+
+    niches = list(dict.fromkeys(n for n, _ in pairs))
+    areas = list(dict.fromkeys(a for _, a in pairs))
+    lines = [
+        f"label: {slugify('-'.join(niches))[:60]}",
+        f"area_label: {slugify('-'.join(areas))[:60]}",
+        "pairs:",
+    ]
+    for niche, area in pairs:
+        lines.append(f'  - {{ niche: "{niche}", area: "{area}" }}')
+    handle = tempfile.NamedTemporaryFile(
+        mode="w", suffix=".yaml", prefix="menu-find-", delete=False,
+        encoding="utf-8",
+    )
+    with handle:
+        handle.write("\n".join(lines) + "\n")
+    return Path(handle.name)
+
+
 def action_find() -> None:
     config = Config.from_env()
     has_key = bool(config.google_places_api_key)
@@ -142,17 +167,40 @@ def action_find() -> None:
         niche = covered[0][0] if covered else "physiotherapist"
         area = covered[0][1] if covered else "Hitchin"
         print(f"\nUsing {niche} in {area}.")
+        pairs = [(niche, area)]
     else:
-        niche = ask("Niche", "physiotherapist")
-        area = ask("Town or area", "Hitchin, Hertfordshire")
+        pairs = []
+        while True:
+            niche = ask("Niche", "physiotherapist")
+            area = ask("Town or area", "Hitchin, Hertfordshire")
+            pairs.append((niche, area))
+            if not ask_yes_no(
+                "Add another niche/town to this run? (merged into one sheet)", False
+            ):
+                break
 
     radius = ask("Radius in metres", "8000")
     top = ask("How many rows in the shortlist", "25")
+    refresh = (not demo) and ask_yes_no(
+        "Ignore the 30-day cache and re-fetch fresh data? Costs API calls", False
+    )
 
-    argv = ["--niche", niche, "--area", area, "--radius", radius,
-            "--top", top, "--from-menu"]
+    config_path = None
+    if len(pairs) == 1:
+        niche, area = pairs[0]
+        argv = ["--niche", niche, "--area", area, "--radius", radius,
+                "--top", top, "--from-menu"]
+    else:
+        # Several pairs run through find.py's batch-config path, merged and
+        # de-duplicated into one sheet. The YAML is written for it here so
+        # nobody has to author a config file by hand.
+        config_path = write_pairs_config(pairs)
+        argv = ["--batch-config", str(config_path), "--radius", radius,
+                "--top", top, "--from-menu"]
     if demo:
         argv += ["--fixture", str(FIXTURE)]
+    if refresh:
+        argv += ["--refresh"]
 
     print("\n" + "-" * 60)
     import find
@@ -163,6 +211,9 @@ def action_find() -> None:
         # find.py exits with a message for bad input; show it, don't crash out.
         print(exc.code if isinstance(exc.code, str) else "")
         return
+    finally:
+        if config_path is not None:
+            config_path.unlink(missing_ok=True)
     if code == 0:
         latest = list_batches()
         if latest and ask_yes_no("\nOpen the shortlist in your spreadsheet app?", True):
@@ -473,15 +524,50 @@ def action_combine() -> None:
         open_in_default_app(batch.shortlist_path)
 
 
+CONFIG_MENU = [
+    ("1", "Check setup (keys, dependencies)", action_check),
+    ("2", "Set up API keys (writes your .env file)", action_keys),
+    ("3", "Test API keys (one small call each)", action_test_keys),
+]
+
+
+def action_config() -> None:
+    """The configuration submenu — setup lives here, out of the daily flow."""
+    while True:
+        clear()
+        print("=" * 60)
+        print("  Setup & configuration")
+        print("=" * 60)
+        print()
+        for key, label, _ in CONFIG_MENU:
+            print(f"  {key}  {label}")
+        print("  b  Back to the main menu")
+        print()
+        choice = ask("Choose", "b").lower()
+        if choice in ("b", "back", "q"):
+            return
+        action = next((fn for key, _, fn in CONFIG_MENU if key == choice), None)
+        if action is None:
+            print("\nThat wasn't one of the options.")
+            pause()
+            continue
+        try:
+            action()
+        except KeyboardInterrupt:
+            print("\n\nStopped.")
+        pause()
+
+
+action_config.handles_own_pause = True
+
+# Ordered as the work actually flows: find, cull, combine, open, tune.
 MENU = [
-    ("1", "Find prospects", action_find),
+    ("1", "Find prospects (one or several niches/towns)", action_find),
     ("2", "Review a shortlist (cull to your 10-15)", action_cull),
-    ("3", "Tune the scoring from your decisions", action_tune),
+    ("3", "Combine batches into one sheet (by niche or town)", action_combine),
     ("4", "Open a shortlist in your spreadsheet app", action_open),
-    ("5", "Check setup (keys, dependencies)", action_check),
-    ("6", "Set up API keys (writes your .env file)", action_keys),
-    ("7", "Test API keys (one small call each)", action_test_keys),
-    ("8", "Combine batches into one sheet (by niche or town)", action_combine),
+    ("5", "Tune the scoring from your decisions", action_tune),
+    ("6", "Setup & configuration (keys, checks, tests)", action_config),
 ]
 
 
@@ -509,7 +595,8 @@ def main() -> int:
             action()
         except KeyboardInterrupt:
             print("\n\nStopped.")
-        pause()
+        if not getattr(action, "handles_own_pause", False):
+            pause()
 
 
 if __name__ == "__main__":
