@@ -86,7 +86,10 @@ def test_places(api_key: Optional[str], *, post: Optional[Callable] = None) -> K
     """One tiny Text Search. Costs a single API call."""
     name = "Google Places"
     if not api_key:
-        return KeyTestResult(name, False, "no key set", "Menu option 6 to add one.")
+        return KeyTestResult(
+            name, False, "no key set",
+            "Add one via Setup & configuration on the menu.",
+        )
 
     def default_post(url, json_body, headers):
         import requests

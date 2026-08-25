@@ -80,20 +80,32 @@ Paths in the examples below use forward slashes; PowerShell accepts either.
   Postal Outreach Pipeline — prospect finder
 ============================================================
 
-  1  Find prospects
+  1  Find prospects (one or several niches/towns)
   2  Review a shortlist (cull to your 10-15)
-  3  Tune the scoring from your decisions
+  3  Combine batches into one sheet (by niche or town)
   4  Open a shortlist in your spreadsheet app
-  5  Check setup (keys, dependencies)
-  6  Set up API keys (writes your .env file)
-  7  Test API keys (one small call each)
-  8  Combine batches into one sheet (by niche or town)
+  5  Tune the scoring from your decisions
+  6  Setup & configuration (keys, checks, tests)
   q  Quit
 ```
 
-It asks for the niche and town in plain English, runs the search, and offers
-to open the result straight in Excel. Option **5** is the one to try first —
-it tells you which keys are set and what's missing.
+The main menu is the daily workflow, in the order the work flows. Setup lives
+behind option **6**:
+
+```
+  Setup & configuration
+
+  1  Check setup (keys, dependencies)
+  2  Set up API keys (writes your .env file)
+  3  Test API keys (one small call each)
+  b  Back to the main menu
+```
+
+Everything the command-line flags do is asked as a question instead:
+**Find prospects** offers to add more niche/town pairs to the same run
+(merged and de-duplicated into one sheet — no config file to write), and asks
+whether to ignore the 30-day cache and re-fetch fresh data. Start with
+**6 → 1 Check setup** — it tells you which keys are set and what's missing.
 
 Everything below is the same functionality driven from the command line, if
 you'd rather script it.
@@ -132,7 +144,8 @@ API call.
 works without one. It's a plain text file holding your API keys, kept out of
 the code so they never reach GitHub (it's gitignored).
 
-The easiest way to create it is **option 6 on the menu**, which prompts for
+The easiest way to create it is **Setup & configuration → Set up API keys**
+on the menu, which prompts for
 each key and writes the file for you. Windows Explorer refuses to create files
 whose name starts with a dot, so this saves a genuine fight. By hand:
 `cp .env.example .env` and fill it in.
@@ -165,7 +178,7 @@ Your key lives only in the gitignored `.env` on your machine, so "None" for
 application restrictions is a reasonable trade here. Set a **budget cap** in
 the console as the real backstop.
 
-**Menu option 7 tests this for you** — one small call per key, and it names
+**Setup & configuration → Test API keys checks this for you** — one small call per key, and it names
 the specific misconfiguration rather than returning a raw permission error:
 
 ```
@@ -182,7 +195,7 @@ right after an edit, wait and run it again.
   shared across the APIs you tick on them. So: enable the PageSpeed Insights
   API, then go to Credentials → click your existing Places key → under **API
   restrictions** tick **PageSpeed Insights API** as well → Save. Paste the same
-  key into both prompts (menu option 6 offers to do this for you). Free.
+  key into both prompts (the key setup on the menu offers to do this for you). Free.
 
   The API does answer without any key, but on a low anonymous quota that a
   batch of 25 sites can exhaust — scores then come back empty and those sites
@@ -428,7 +441,7 @@ searches appears once), and **re-scores everything with the current
 ./combine.py batches/2026-08-25_physiotherapist_hitchin batches/2026-08-26_physiotherapist_stevenage
 ```
 
-Or **menu option 8** — pick the batches by number, answer two filter
+Or **menu option 3** — pick the batches by number, answer two filter
 questions, done.
 
 - The niche filter matches by containment both ways, so `physio` matches a
@@ -532,7 +545,7 @@ batches/2026-09-01_physios_hitchin/
 ## Development
 
 ```bash
-python3 -m unittest discover -s tests -t .      # 186 tests, no network needed
+python3 -m unittest discover -s tests -t .      # 193 tests, no network needed
 ```
 
 Every network client takes an injectable transport, so the whole pipeline is
