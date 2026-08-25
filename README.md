@@ -512,6 +512,33 @@ re-run. And the cache is 30 days: past that, everything is re-fetched.
 
 ---
 
+## What's safe to delete
+
+Two folders, doing different jobs — and only one of them is disposable:
+
+| Folder | What it holds | Delete it? |
+|---|---|---|
+| `.cache/` | Saved API responses | **No.** It's the only reason re-runs are free |
+| `batches/` | Shortlists, and your cull decisions | The shortlists regenerate; **the decisions don't** |
+
+**`.cache/` is the one to protect.** It's a hidden folder full of JSON, so it
+looks like junk — but delete it and your next run pays full price for
+businesses you've already bought. Verified: batch deleted with the cache
+intact regenerates for **0 API calls**; cache deleted costs the lot again.
+**Setup & configuration → Check setup** shows how many responses it holds.
+
+**In `batches/`, the shortlist is cheap and your judgement is not.**
+`shortlist.csv` and the `business.json` files regenerate for free. But
+`approved.csv` and `rejections.jsonl` are the hour you spent culling — the
+reason codes `tune.py` learns from, and the record of who you've already
+approached. Nothing can rebuild those.
+
+So: **delete a batch you never culled** if it's clutter. **Keep any batch you
+culled**, and keep `.cache/` regardless. Neither is large — the cache is a few
+hundred KB per batch, and it self-expires after 30 days.
+
+---
+
 ## Who gets the letter?
 
 Two sources disagree more often than you'd expect:

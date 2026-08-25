@@ -311,6 +311,24 @@ def action_check() -> None:
     for folder in folders[:5]:
         print(f"    {folder.name}")
 
+    # The cache is a dot-folder full of JSON — it looks like junk, and
+    # deleting it silently converts every future re-run back to full price.
+    cache_root = Path(config.cache_dir)
+    if not cache_root.is_absolute():
+        cache_root = HERE / cache_root
+    if cache_root.is_dir():
+        entries = list(cache_root.rglob("*.json"))
+        details = len(list((cache_root / "places_details").glob("*.json"))) \
+            if (cache_root / "places_details").is_dir() else 0
+        print(f"\nCache            {len(entries)} saved API responses "
+              f"in {cache_root}")
+        if details:
+            print(f"                 {details} of them are Place Details "
+                  "— the billable ones")
+        print("                 Keep this folder: it is what makes re-runs free.")
+    else:
+        print(f"\nCache            none yet ({cache_root})")
+
 
 
 KEY_INFO = [
