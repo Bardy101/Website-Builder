@@ -19,6 +19,7 @@ sys.path.insert(0, str(HERE))
 
 try:
     from pipeline.config import Config
+    from pipeline.history import past_searches
     from pipeline.storage import Batch
 except ImportError as exc:
     if "pipeline" not in str(exc):
@@ -119,6 +120,34 @@ def choose_batch(action: str) -> Path | None:
 
 
 
+def cache_dir() -> Path:
+    path = Path(Config.from_env().cache_dir)
+    return path if path.is_absolute() else HERE / path
+
+
+def pick_past_search(history, *, offer_new: bool = True):
+    """Offer the searches already cached, so a repeat is free by construction.
+
+    Returns a PastSearch to reuse, or None to type a fresh one. Matching the
+    exact wording matters: "Hitchin" and "Hitchin, Hertfordshire" are separate
+    cache entries, and only an exact match avoids a new billable search.
+    """
+    if not history:
+        return None
+    print("\nSearches you have already paid for (free to repeat):\n")
+    for i, entry in enumerate(history[:15], 1):
+        print(f"  {i:>2}  {entry.describe()}")
+    print("   n  Type a new search instead")
+    answer = ask("\nNumber, or 'n' for a new search", "n").strip().lower()
+    if answer in ("n", "new", ""):
+        return None
+    try:
+        return history[int(answer) - 1]
+    except (ValueError, IndexError):
+        print("    Not one of those — typing a new search instead.")
+        return None
+
+
 def write_pairs_config(pairs: list[tuple[str, str]]):
     """Write a temporary batch-config YAML for a multi-pair find run."""
     import tempfile
@@ -155,7 +184,9 @@ def action_find() -> None:
     print("Suggested niches: " + ", ".join(SUGGESTED[:6]))
     print("(use the word a customer would search — 'plumber', not 'plumbing services')\n")
 
-    demo = not has_key or ask_yes_no("Use the demo data instead of the real API?", False)
+    # With a key we always search for real; without one there is nothing to
+    # search but the demo data, so there is no question worth asking.
+    demo = not has_key
 
     if demo:
         from pipeline.fixtures import FixturePlacesClient
@@ -168,18 +199,29 @@ def action_find() -> None:
         area = covered[0][1] if covered else "Hitchin"
         print(f"\nUsing {niche} in {area}.")
         pairs = [(niche, area)]
+        reused_radius = None
     else:
+        history = past_searches(cache_dir())
         pairs = []
+        reused_radius = None
         while True:
-            niche = ask("Niche", "physiotherapist")
-            area = ask("Town or area", "Hitchin, Hertfordshire")
-            pairs.append((niche, area))
+            picked = pick_past_search(history, offer_new=True)
+            if picked is not None:
+                pairs.append((picked.niche, picked.area))
+                reused_radius = str(picked.radius_m)
+                print(f"    reusing: {picked.describe()}")
+            else:
+                niche = ask("Niche", "physiotherapist")
+                area = ask("Town or area", "Hitchin, Hertfordshire")
+                pairs.append((niche, area))
             if not ask_yes_no(
                 "Add another niche/town to this run? (merged into one sheet)", False
             ):
                 break
 
-    radius = ask("Radius in metres", "8000")
+    # Reusing a past search means matching its radius too — the radius is part
+    # of the cache key, so changing it buys a fresh search for the same places.
+    radius = ask("Radius in metres", reused_radius or "8000")
     top = ask("How many rows in the shortlist", "25")
     refresh = (not demo) and ask_yes_no(
         "Ignore the 30-day cache and re-fetch fresh data? Costs API calls", False

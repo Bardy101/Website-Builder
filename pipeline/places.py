@@ -199,7 +199,15 @@ class PlacesClient:
             self.cache.set(
                 "places_search",
                 cache_key,
-                {"requested": max_results, "places": results},
+                {
+                    "requested": max_results,
+                    "places": results,
+                    # Stored so the menu can list past searches exactly,
+                    # rather than parsing them back out of the key.
+                    "niche": niche,
+                    "area": area,
+                    "radius_m": radius_m,
+                },
             )
         return results
 

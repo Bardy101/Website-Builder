@@ -107,6 +107,27 @@ Everything the command-line flags do is asked as a question instead:
 whether to ignore the 30-day cache and re-fetch fresh data. Start with
 **6 → 1 Check setup** — it tells you which keys are set and what's missing.
 
+### Repeating a search without paying again
+
+A repeat costs nothing only on an **exact** match of niche, area *and* radius
+— `Hitchin` and `Hitchin, Hertfordshire` are two different cache entries. So
+rather than expecting you to remember which wording you used, Find prospects
+lists what's actually cached and lets you pick by number:
+
+```
+Searches you have already paid for (free to repeat):
+
+   1  physiotherapist in Hitchin   radius 8000   cached today
+   2  dentist in Letchworth        radius 8000   cached 1 day ago
+   3  accountant in Stevenage      radius 8000   cached 3 days ago
+   n  Type a new search instead
+```
+
+Picking one reuses its exact wording and defaults the radius to the cached
+value, so the run is free by construction. The list is read from the cache
+itself — the same store that decides whether you're billed — and entries past
+the 30-day expiry are left out, because repeating those *would* cost.
+
 Everything below is the same functionality driven from the command line, if
 you'd rather script it.
 
@@ -625,7 +646,7 @@ batches/2026-09-01_physios_hitchin/
 ## Development
 
 ```bash
-python3 -m unittest discover -s tests -t .      # 205 tests, no network needed
+python3 -m unittest discover -s tests -t .      # 215 tests, no network needed
 ```
 
 Every network client takes an injectable transport, so the whole pipeline is
