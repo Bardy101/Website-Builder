@@ -266,6 +266,20 @@ def action_cull() -> None:
     folder = choose_batch("review")
     if folder is None:
         return
+
+    # A batch culled before is re-reviewed from its survivors by default;
+    # showing the original list again would resurrect every rejected row.
+    batch = Batch(folder)
+    already_culled = batch.approved_path.is_file()
+    start_over = False
+    if already_culled:
+        kept = len(batch.read_shortlist(path=batch.approved_path))
+        total = len(batch.read_shortlist())
+        print(f"\nThis batch was already culled to {kept} of {total} rows.\n")
+        print("  1  Continue culling those approved rows")
+        print("  2  Start over from the original shortlist")
+        start_over = ask("\nNumber", "1").strip() == "2"
+
     print("\nHow would you like to review it?\n")
     print("  1  One at a time here (shows the links, you type keep or a reason)")
     print("  2  In a spreadsheet (add a 'reason' column, save, then import it)")
@@ -273,8 +287,12 @@ def action_cull() -> None:
 
     import cull
 
+    extra = ["--full"] if start_over else []
     if choice == "2":
-        path = folder / "shortlist.csv"
+        csv_name = (
+            "approved.csv" if already_culled and not start_over else "shortlist.csv"
+        )
+        path = folder / csv_name
         print(f"\nOpening {path.name}. Add a column headed 'reason' and fill it in")
         print("for the ones you're rejecting. Reason codes:\n")
         from pipeline.cull import REASON_CODES
@@ -284,12 +302,12 @@ def action_cull() -> None:
         open_in_default_app(path)
         input("\nSave and close the file, then press Enter to import your decisions…")
         try:
-            cull.main(["--batch", str(folder), "--from-csv", "shortlist.csv"])
+            cull.main(["--batch", str(folder), "--from-csv", csv_name] + extra)
         except SystemExit as exc:
             print(exc.code if isinstance(exc.code, str) else "")
     else:
         try:
-            cull.main(["--batch", str(folder)])
+            cull.main(["--batch", str(folder)] + extra)
         except SystemExit as exc:
             print(exc.code if isinstance(exc.code, str) else "")
 

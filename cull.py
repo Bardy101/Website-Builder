@@ -61,6 +61,12 @@ def parse_args(argv=None):
         help="read decisions from a 'reason' column in this CSV instead of prompting",
     )
     p.add_argument("--keep", type=int, default=15, help="target number to keep (guide only)")
+    p.add_argument(
+        "--full",
+        action="store_true",
+        help="review the original shortlist even if this batch was already "
+             "culled (starts the cull over)",
+    )
     return p.parse_args(argv)
 
 
@@ -146,9 +152,27 @@ def decisions_from_csv(path: Path) -> dict[str, str]:
 def main(argv=None) -> int:
     args = parse_args(argv)
     batch = Batch(args.batch)
-    rows = batch.read_shortlist()
-    if not rows:
-        raise SystemExit(f"No shortlist.csv in {args.batch}. Run find.py first.")
+
+    # A culled batch is re-reviewed from its survivors, not the original
+    # shortlist — otherwise a second pass silently resurrects every row
+    # already rejected, and its outcome overwrites approved.csv.
+    already_culled = batch.approved_path.is_file()
+    if already_culled and not args.full:
+        rows = batch.read_shortlist(path=batch.approved_path)
+        if not rows:
+            raise SystemExit(
+                "approved.csv is empty — everything was rejected last time.\n"
+                "To start over from the original shortlist, rerun with --full."
+            )
+        original = len(batch.read_shortlist())
+        print(f"\nThis batch was already culled: reviewing its {len(rows)} "
+              f"approved row(s), of {original} originally found.")
+        print("Rejections here cull further. To start over from the original "
+              "shortlist instead, rerun with --full.")
+    else:
+        rows = batch.read_shortlist()
+        if not rows:
+            raise SystemExit(f"No shortlist.csv in {args.batch}. Run find.py first.")
 
     if args.from_csv:
         csv_path = Path(args.from_csv)

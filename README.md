@@ -386,6 +386,13 @@ kills the analysis:
 batches there's a real signal you haven't articulated yet — `cull.py` tells you
 when it crosses that line.
 
+**Reviewing a culled batch continues from its survivors.** Pick an
+already-culled batch and you review the rows in `approved.csv` — rejecting
+more culls further, and previously rejected rows stay rejected. The menu also
+offers **Start over from the original shortlist** (`--full` on the command
+line) if you want a fresh pass over everything. Rejections accumulate in
+`rejections.jsonl` across passes either way, so `tune.py` sees them all.
+
 ### `tune.py` — turn rejections into weight proposals
 
 ```bash
@@ -651,7 +658,7 @@ batches/2026-09-01_physios_hitchin/
 ## Development
 
 ```bash
-python3 -m unittest discover -s tests -t .      # 221 tests, no network needed
+python3 -m unittest discover -s tests -t .      # 226 tests, no network needed
 ```
 
 Every network client takes an injectable transport, so the whole pipeline is

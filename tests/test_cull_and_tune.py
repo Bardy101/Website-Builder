@@ -113,5 +113,82 @@ class TestTune(unittest.TestCase):
         self.assertIn("None. Not enough evidence yet", text)
 
 
+
+class TestRecull(unittest.TestCase):
+    """Re-reviewing a culled batch must continue from the survivors.
+
+    The bug: option 2 always read shortlist.csv, so a second review showed
+    the original uncalled list — and completing it would have resurrected
+    every previously rejected row into approved.csv.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.batch = Batch.create(self.tmp.name, niche="physio", area="hitchin")
+        self.batch.write_shortlist(
+            [{"place_id": f"id{i}", "name": f"Biz {i}"} for i in range(4)]
+        )
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def _cull(self, reasons, *, source="shortlist.csv", full=False):
+        import csv
+
+        import cull
+
+        rows = self.batch.read_shortlist(
+            path=None if source == "shortlist.csv" else self.batch.approved_path
+        )
+        marked = self.batch.path / "marked.csv"
+        cols = [c for c in rows[0].keys() if c != "reason"] + ["reason"]
+        with marked.open("w", newline="", encoding="utf-8") as fh:
+            writer = csv.DictWriter(fh, fieldnames=cols)
+            writer.writeheader()
+            for row in rows:
+                row = dict(row)
+                row["reason"] = reasons.get(row["place_id"], "")
+                writer.writerow(row)
+        argv = ["--batch", str(self.batch.path), "--from-csv", "marked.csv"]
+        if full:
+            argv.append("--full")
+        cull.main(argv)
+
+    def test_second_cull_reviews_survivors_not_the_original(self):
+        self._cull({"id0": "chain"})
+        self.assertEqual(len(self.batch.read_shortlist(path=self.batch.approved_path)), 3)
+
+        self._cull({"id1": "gut"}, source="approved")
+        survivors = self.batch.read_shortlist(path=self.batch.approved_path)
+        ids = {r["place_id"] for r in survivors}
+        # id1 culled this pass — and id0 must NOT have been resurrected.
+        self.assertEqual(ids, {"id2", "id3"})
+
+    def test_rejections_accumulate_across_passes(self):
+        self._cull({"id0": "chain"})
+        self._cull({"id1": "gut"}, source="approved")
+        reasons = [r["reason"] for r in self.batch.read_rejections()]
+        self.assertEqual(sorted(reasons), ["chain", "gut"])
+
+    def test_full_flag_starts_over_from_the_original(self):
+        self._cull({"id0": "chain"})
+        self._cull({}, full=True)  # keep everything on the fresh pass
+        survivors = self.batch.read_shortlist(path=self.batch.approved_path)
+        self.assertEqual(len(survivors), 4)
+
+    def test_empty_approved_points_at_full(self):
+        import cull
+
+        self.batch.write_shortlist([], path=self.batch.approved_path)
+        with self.assertRaises(SystemExit) as ctx:
+            cull.main(["--batch", str(self.batch.path)])
+        self.assertIn("--full", str(ctx.exception))
+
+    def test_uncalled_batch_still_reviews_the_shortlist(self):
+        self._cull({"id3": "too_small"})
+        survivors = self.batch.read_shortlist(path=self.batch.approved_path)
+        self.assertEqual(len(survivors), 3)
+
+
 if __name__ == "__main__":
     unittest.main()
