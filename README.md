@@ -480,11 +480,35 @@ batch with no filters if all you want is the re-rank.
 
 **The one thing it can't back-fill is data that was never fetched.** A batch
 predating the website contact lookup has no `site_contact`, so those columns
-stay blank however often you combine. To fill them, run **Find prospects**
-again with the same niche and town: the Places data is served from the 30-day
-cache (zero Google calls) and only the contact pages are fetched, which Google
-doesn't charge for. That writes a new batch folder rather than editing the old
-one.
+stay blank however often you combine.
+
+To fill them, run **Find prospects** again with the same niche and town. The
+Places data comes from the 30-day cache — **zero Google calls** — and only the
+businesses' own websites are read, which nobody bills for. The run says so:
+
+```
+Google API usage this run:
+     0  Text Search    (Pro tier, 5,000 free/month)
+     0  Place Details  (Enterprise tier, 1,000 free/month)
+    12  served from the 30-day cache, costing nothing
+  Nothing was billed — every Places lookup came from the cache.
+    10  pages read from the businesses' own websites (not billed by anyone)
+```
+
+It writes a new batch folder rather than editing the old one; combine the two
+afterwards if you want them together.
+
+**Three ways to accidentally pay on that re-run:**
+
+| | Cost |
+|---|---|
+| Answering **yes** to "ignore the cache and re-fetch fresh data?" | Everything, again — the prompt defaults to no |
+| Typing the town differently (`Hitchin` vs `Hitchin, Hertfordshire`) | One fresh search; the businesses stay cached |
+| Changing the radius | One fresh search, plus details for any genuinely new business |
+
+The last two cost one Text Search from the 5,000/month tier, so they're minor
+— but match your original wording and radius if you want a strictly free
+re-run. And the cache is 30 days: past that, everything is re-fetched.
 
 ---
 
@@ -574,7 +598,7 @@ batches/2026-09-01_physios_hitchin/
 ## Development
 
 ```bash
-python3 -m unittest discover -s tests -t .      # 203 tests, no network needed
+python3 -m unittest discover -s tests -t .      # 205 tests, no network needed
 ```
 
 Every network client takes an injectable transport, so the whole pipeline is

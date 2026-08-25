@@ -336,5 +336,64 @@ class TestConcurrentEnrichment(unittest.TestCase):
         self.assertEqual(broken["site_score"]["verdict"], "social_only")
 
 
+
+class TestReRunForContactData(unittest.TestCase):
+    """Re-running to pick up a lookup that did not exist before must not
+    re-buy the Places data it already has."""
+
+    def setUp(self):
+        self.weights = Weights.load(ROOT / "weights.json")
+        self.page = "<html><body><h3>Jay Madsen</h3><p>Practice Manager</p></body></html>"
+
+    def _finder(self, cache, fetched):
+        from pipeline.site_contacts import SiteContactFinder
+
+        def http_get(url):
+            fetched.append(url)
+            return "" if "robots" in url else self.page
+
+        return SiteContactFinder(http_get=http_get, cache=cache)
+
+    def test_contacts_arrive_without_a_single_google_call(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Cache(tmp, 30)
+            first = make_client(cache=cache)
+            discover(niche="physiotherapist", area="Hitchin", places_client=first,
+                     weights=self.weights, top=25, seen_place_ids=set())
+            self.assertGreater(first.stats["details_fetched"], 0)
+
+            fetched = []
+            second = make_client(cache=cache)
+            result = discover(
+                niche="physiotherapist", area="Hitchin", places_client=second,
+                weights=self.weights, top=25, seen_place_ids=set(),
+                site_contacts=self._finder(cache, fetched),
+            )
+            # Not one billable Google call on the second run...
+            self.assertEqual(second.stats["details_fetched"], 0)
+            self.assertEqual(second.stats["search_fetched"], 0)
+            # ...yet the contact data is now present.
+            self.assertGreater(fetched.__len__(), 0)
+            with_contacts = [b for b in result.businesses if b.get("site_contact")]
+            self.assertTrue(with_contacts)
+            self.assertEqual(with_contacts[0]["site_contact"]["name"], "Jay Madsen")
+
+    def test_a_differently_typed_area_costs_a_fresh_search(self):
+        """The cache key is the query text, so 'Hitchin' and
+        'Hitchin, Hertfordshire' are different searches."""
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Cache(tmp, 30)
+            discover(niche="physiotherapist", area="Hitchin",
+                     places_client=make_client(cache=cache), weights=self.weights,
+                     top=25, seen_place_ids=set())
+            second = make_client(cache=cache)
+            discover(niche="physiotherapist", area="Hitchin, Hertfordshire",
+                     places_client=second, weights=self.weights, top=25,
+                     seen_place_ids=set())
+            self.assertGreater(second.stats["search_fetched"], 0)
+            # The businesses themselves are still cached by place id.
+            self.assertEqual(second.stats["details_fetched"], 0)
+
+
 if __name__ == "__main__":
     unittest.main()

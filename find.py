@@ -267,9 +267,19 @@ def main(argv=None) -> int:
         say(f"  {details:>4}  Place Details  (Enterprise tier, 1,000 free/month)")
         if cached:
             say(f"  {cached:>4}  served from the 30-day cache, costing nothing")
-        if details:
+        if searches + details == 0:
+            say("  Nothing was billed — every Places lookup came from the cache.")
+        elif details:
             say(f"  At this rate, roughly {1000 // max(details, 1)} more runs "
                 "this month within the free Enterprise allowance.")
+
+        # Reading a business's own website is not a Google call. Saying so
+        # explicitly matters: a run can show real activity here while billing
+        # nothing, which is exactly what a re-run for contact data looks like.
+        contact_stats = getattr(contacts, "stats", None) if contacts else None
+        if contact_stats and contact_stats.get("fetched"):
+            say(f"  {contact_stats['fetched']:>4}  pages read from the businesses' "
+                "own websites (not billed by anyone)")
 
     say("")
     if args.from_menu:
