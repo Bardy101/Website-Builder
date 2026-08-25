@@ -127,8 +127,16 @@ def score_business(business: dict[str, Any], weights: Weights) -> ScoreResult:
         breakdown["social_or_directory_only"] = sig.get("social_or_directory_only", 30)
     else:
         mobile = site.get("mobile_score")
-        if mobile is not None and mobile < thr.get("mobile_score_poor", 50):
-            breakdown["mobile_score_below_50"] = sig.get("mobile_score_below_50", 25)
+        if mobile is not None:
+            if mobile < thr.get("mobile_score_poor", 50):
+                breakdown["mobile_score_below_50"] = sig.get("mobile_score_below_50", 25)
+            elif mobile < thr.get("mobile_score_dated_max", 70):
+                # The graded band: without it, mobile 51 scored the same as
+                # a flawless 95, and 49 vs 51 swung a full 25 points. A
+                # visibly middling site now outranks a fine one.
+                breakdown["mobile_score_middling"] = sig.get("mobile_score_middling", 12)
+        if site.get("viewport") is False:
+            breakdown["no_viewport"] = sig.get("no_viewport", 10)
         if site.get("https") is False:
             breakdown["no_https"] = sig.get("no_https", 15)
 

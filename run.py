@@ -414,6 +414,65 @@ def action_test_keys() -> None:
     print("so if you have just edited the key, wait and test again.")
 
 
+
+def action_combine() -> None:
+    folders = list_batches()
+    if len(folders) < 1:
+        print("\nNo batches yet — run 'Find prospects' first.")
+        return
+    print("\nCombine batches into one re-ranked sheet")
+    print("-" * 60)
+    print("Costs nothing — it re-reads what's already on disk, de-duplicates")
+    print("by business, and re-scores with the current weights.\n")
+    for i, folder in enumerate(folders[:20], 1):
+        combined = " (combined sheet)" if Batch(folder).read_meta().get("combined_from") else ""
+        print(f"  {i}  {folder.name}{combined}")
+    answer = ask("\nNumbers to combine (e.g. 1,3,4) or 'a' for all", "a")
+
+    if answer.lower() == "a":
+        chosen = [f for f in folders
+                  if not Batch(f).read_meta().get("combined_from")]
+    else:
+        try:
+            chosen = [folders[int(i) - 1] for i in answer.replace(" ", "").split(",")]
+        except (ValueError, IndexError):
+            print("That wasn't a list of numbers from the list.")
+            return
+    if not chosen:
+        print("Nothing to combine.")
+        return
+
+    niche = ask("Keep only one niche? (blank = all; 'physio' matches "
+                "'physiotherapist')").strip() or None
+    town = ask("Keep only one town? (blank = all)").strip() or None
+
+    from datetime import date
+
+    from pipeline.combine import combine_batches, write_combined
+    from pipeline.scoring import Weights
+
+    merged = combine_batches(
+        [Batch(f) for f in chosen], niche=niche, town=town,
+        weights=Weights.load(HERE / "weights.json"),
+    )
+    if not merged:
+        print("\nNothing matched that filter — check the spelling against the")
+        print("niche and town columns of the source CSVs.")
+        return
+
+    label = "-".join(x for x in (niche, town) if x) or "combined"
+    default_name = f"combined_{date.today().isoformat()}_{label}"
+    name = ask("Name for the combined sheet", default_name)
+    batch = write_combined(
+        batches_dir(), merged, name=name,
+        source_names=[Path(f).name for f in chosen],
+        niche_label=niche or "combined", area_label=town or "combined",
+    )
+    print(f"\n{len(merged)} businesses -> {batch.shortlist_path}")
+    if ask_yes_no("Open it in your spreadsheet app?", True):
+        open_in_default_app(batch.shortlist_path)
+
+
 MENU = [
     ("1", "Find prospects", action_find),
     ("2", "Review a shortlist (cull to your 10-15)", action_cull),
@@ -422,6 +481,7 @@ MENU = [
     ("5", "Check setup (keys, dependencies)", action_check),
     ("6", "Set up API keys (writes your .env file)", action_keys),
     ("7", "Test API keys (one small call each)", action_test_keys),
+    ("8", "Combine batches into one sheet (by niche or town)", action_combine),
 ]
 
 

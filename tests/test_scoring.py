@@ -120,5 +120,58 @@ class TestWeightsLoading(unittest.TestCase):
         self.assertEqual(loaded.signals["no_website"], 40)
 
 
+
+class TestGradedBand(unittest.TestCase):
+    """v2 weights: the cliff at 50 is smoothed and 'dated' earns points.
+
+    Before: mobile 49 -> +25, mobile 51 -> 0, same as a flawless site.
+    """
+
+    def setUp(self):
+        self.w = Weights.load(Path(__file__).resolve().parent.parent / "weights.json")
+
+    def _score(self, mobile, viewport=True):
+        b = business(
+            website="https://x.co.uk",
+            site_score={"verdict": "dated", "mobile_score": mobile,
+                        "https": True, "viewport": viewport},
+        )
+        return score_business(b, self.w)
+
+    def test_middling_band_earns_points(self):
+        result = self._score(60)
+        self.assertEqual(result.breakdown["mobile_score_middling"], 12)
+
+    def test_dated_now_outranks_fine(self):
+        dated = self._score(60).score
+        fine = self._score(95).score
+        self.assertGreater(dated, fine)
+
+    def test_cliff_is_smoothed(self):
+        just_poor = self._score(49).score
+        just_middling = self._score(51).score
+        self.assertEqual(just_poor - just_middling, 25 - 12)
+
+    def test_band_edges(self):
+        self.assertIn("mobile_score_below_50", self._score(49).breakdown)
+        self.assertIn("mobile_score_middling", self._score(50).breakdown)
+        self.assertIn("mobile_score_middling", self._score(69).breakdown)
+        self.assertNotIn("mobile_score_middling", self._score(70).breakdown)
+
+    def test_missing_viewport_earns_points(self):
+        result = self._score(95, viewport=False)
+        self.assertEqual(result.breakdown["no_viewport"], 10)
+
+    def test_unknown_still_earns_nothing(self):
+        b = business(
+            website="https://x.co.uk",
+            site_score={"verdict": "unknown", "mobile_score": None,
+                        "https": None, "viewport": None},
+        )
+        result = score_business(b, self.w)
+        self.assertNotIn("mobile_score_middling", result.breakdown)
+        self.assertNotIn("no_viewport", result.breakdown)
+
+
 if __name__ == "__main__":
     unittest.main()

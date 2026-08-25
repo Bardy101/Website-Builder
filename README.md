@@ -87,6 +87,7 @@ Paths in the examples below use forward slashes; PowerShell accepts either.
   5  Check setup (keys, dependencies)
   6  Set up API keys (writes your .env file)
   7  Test API keys (one small call each)
+  8  Combine batches into one sheet (by niche or town)
   q  Quit
 ```
 
@@ -374,11 +375,20 @@ later batch performs worse you can see what moved.
 | No website at all | +40 | Best lead: nothing to fix, only to build |
 | Facebook page / directory URL | +30 | Effectively no site |
 | Mobile score < 50 | +25 | Real, visible problem |
+| Mobile score 50–69 | +12 | Visibly middling — a dated site should outrank a flawless one |
+| No mobile viewport | +10 | Doesn't adapt to a phone at all |
 | No HTTPS | +15 | Trust problem, easy to show |
 | ≥20 reviews and ≥4.3 rating | +15 | Established, cares about reputation |
 | < 5 reviews | −20 | Too new or too small |
 | Not OPERATIONAL | exclude | |
 | Chain / franchise name match | exclude | Head office decides, not the manager |
+
+The 50–69 band and the viewport signal are the v2 graded band: without them,
+mobile 51 scored identically to a flawless 95, and 49 → 51 swung a full 25
+points. A site can also be ugly-but-fast — PageSpeed can't see design — so
+your eye still overrules the score at the cull, and `tune.py` learns from it.
+Each business's `score_breakdown` in its `business.json` shows exactly which
+signals fired.
 
 Exclusions are checked *before* any site check, so a chain never costs a
 PageSpeed call.
@@ -396,6 +406,43 @@ PageSpeed call.
 
 Unknown is never silently rated `fine`. If a field can't be established it stays
 `null` — never guessed. A wrong owner name on a letter is worse than no name.
+
+---
+
+## Combining batches
+
+Run small, focused batches — one niche, one town — and slice them however you
+like afterwards. Combining costs **zero API calls**: it re-reads the batch
+folders already on disk, de-duplicates by Place ID (a business found by two
+searches appears once), and **re-scores everything with the current
+`weights.json`** — so old batches pick up scoring improvements for free.
+
+```bash
+# all physios, across every town you've searched
+./combine.py --all --niche physio
+
+# every niche you've searched, Hitchin only
+./combine.py --all --town Hitchin
+
+# or name the folders explicitly
+./combine.py batches/2026-08-25_physiotherapist_hitchin batches/2026-08-26_physiotherapist_stevenage
+```
+
+Or **menu option 8** — pick the batches by number, answer two filter
+questions, done.
+
+- The niche filter matches by containment both ways, so `physio` matches a
+  batch searched as `physiotherapist`.
+- The town filter matches the CSV's `town` column exactly (case-insensitive).
+- The output is an ordinary batch folder: cull it, tune from it, open its CSV.
+  Its records are copies, so it stands alone.
+- A combined sheet is never folded into a later `--all` — that would silently
+  double the pool.
+
+One thing combining can't do: conjure businesses the original searches never
+kept. Each source batch holds its own top rows only, so if you plan to slice
+by town later, search each town properly rather than relying on spillover
+from a neighbour's radius.
 
 ---
 
@@ -485,7 +532,7 @@ batches/2026-09-01_physios_hitchin/
 ## Development
 
 ```bash
-python3 -m unittest discover -s tests -t .      # 170 tests, no network needed
+python3 -m unittest discover -s tests -t .      # 186 tests, no network needed
 ```
 
 Every network client takes an injectable transport, so the whole pipeline is

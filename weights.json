@@ -1,11 +1,13 @@
 {
-  "_comment": "Lead-scoring weights for the discover stage. Keep versioned; note the batch number that produced each change. See spec sections 4 and 17.",
-  "_version": 1,
+  "_comment": "Lead-scoring weights for the discover stage. Keep versioned; note the batch number that produced each change. v2: graded mobile-score band (50-69 now earns points, as does a missing viewport) after batch-one review showed visibly dated sites tying with flawless ones.",
+  "_version": 2,
   "_changed_by_batch": 0,
   "signals": {
     "no_website": 40,
     "social_or_directory_only": 30,
     "mobile_score_below_50": 25,
+    "mobile_score_middling": 12,
+    "no_viewport": 10,
     "no_https": 15,
     "established_and_reputable": 15,
     "too_few_reviews": -20
@@ -22,9 +24,19 @@
     "chain_or_franchise": true
   },
   "chain_names": [
-    "nuffield health", "bupa", "the physio company", "ascenti",
-    "specsavers", "boots", "well pharmacy", "vision express",
-    "mydentist", "bupa dental", "{my}dentist", "dental partners",
-    "hcml", "spire healthcare"
+    "nuffield health",
+    "bupa",
+    "the physio company",
+    "ascenti",
+    "specsavers",
+    "boots",
+    "well pharmacy",
+    "vision express",
+    "mydentist",
+    "bupa dental",
+    "{my}dentist",
+    "dental partners",
+    "hcml",
+    "spire healthcare"
   ]
 }
