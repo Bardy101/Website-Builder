@@ -348,19 +348,62 @@ def action_open() -> None:
     open_in_default_app(target)
 
 
+def _chromium_status() -> tuple[bool, str]:
+    """Is a usable Chromium present? Returns (ok, detail)."""
+    try:
+        from playwright.sync_api import sync_playwright
+
+        from pipeline.screenshots import _launch_overrides
+    except Exception as exc:  # noqa: BLE001
+        return False, f"could not load Playwright ({exc})"
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--no-sandbox"], **_launch_overrides())
+            browser.close()
+        return True, ""
+    except Exception as exc:  # noqa: BLE001
+        first = str(exc).strip().splitlines()[0] if str(exc).strip() else type(exc).__name__
+        return False, first[:120]
+
+
 def action_check() -> None:
     print("\nSetup check")
     print("-" * 60)
     print(f"Python           {sys.version.split()[0]}")
     print(f"Project folder   {HERE}")
 
-    for module, needed_for in [("requests", "API calls"), ("yaml", "batch configs")]:
+    # The interpreter running this is the one that needs the packages — naming
+    # it in the fix avoids "but I installed it" when several Pythons exist.
+    py = Path(sys.executable).name
+    missing = []
+    for module, needed_for in [
+        ("requests", "API calls"),
+        ("yaml", "batch configs"),
+        ("bs4", "staleness detection"),
+        ("playwright", "screenshots"),
+        ("PIL", "contact sheet thumbnails"),
+    ]:
         try:
             __import__(module)
             print(f"{module:<16} installed          ({needed_for})")
         except ImportError:
+            missing.append(module)
             print(f"{module:<16} MISSING            ({needed_for})")
-            print(f"                 fix: python -m pip install -r requirements.txt")
+    if missing:
+        print(f"\n                 fix: \"{sys.executable}\" -m pip install "
+              "-r requirements.txt")
+
+    # Playwright needs a browser downloaded separately from the package.
+    if "playwright" not in missing:
+        ok, detail = _chromium_status()
+        label = "installed" if ok else "MISSING"
+        print(f"{'chromium':<16} {label:<18} (screenshots need a browser)")
+        if not ok:
+            print(f"                 {detail}")
+            # The console script is often not on PATH on Windows; the module
+            # form works regardless, which is why it is the advice given.
+            print(f"                 fix: \"{sys.executable}\" -m playwright "
+                  "install chromium")
 
     config = Config.from_env()
     env_file = HERE / ".env"

@@ -14,6 +14,7 @@ recapture.
 from __future__ import annotations
 
 import json
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Callable, Optional
@@ -109,6 +110,21 @@ class ScreenshotCapturer:
         self.root.mkdir(parents=True, exist_ok=True)
         worker = self.capture_one or self._playwright_capture
 
+        # Check the browser once rather than failing identically per site: a
+        # missing browser is one setup problem, not twenty-five site problems.
+        if self.capture_one is None:
+            ready, why = browser_ready()
+            if not ready:
+                self.log.append(
+                    "Chromium is not installed, so no screenshots were taken. "
+                    f"Fix: \"{sys.executable}\" -m playwright install chromium "
+                    f"({why})"
+                )
+                for place_id, _ in pending:
+                    results[place_id] = ShotResult(
+                        place_id, reason="chromium not installed")
+                return results
+
         def safely(place_id: str, url: str) -> ShotResult:
             desktop, mobile = self.paths_for(place_id)
             try:
@@ -181,6 +197,22 @@ class ScreenshotCapturer:
                         context.close()
             finally:
                 browser.close()
+
+
+def browser_ready() -> tuple[bool, str]:
+    """Can a browser actually launch? Checked once per run, not per site."""
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError as exc:
+        return False, f"playwright not installed: {exc}"
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(args=["--no-sandbox"], **_launch_overrides())
+            browser.close()
+        return True, ""
+    except Exception as exc:  # noqa: BLE001
+        text = str(exc).strip()
+        return False, (text.splitlines()[0] if text else type(exc).__name__)[:160]
 
 
 def _launch_overrides() -> dict:

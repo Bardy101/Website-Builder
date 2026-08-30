@@ -210,5 +210,73 @@ class TestScreenshotCaching(unittest.TestCase):
             self.assertFalse(result["bad"].ok)
 
 
+
+class TestMissingBrowser(unittest.TestCase):
+    """A browser that was never installed is one setup problem.
+
+    Reported after a real install where the playwright package landed but
+    `playwright install chromium` had not been run, and the Scripts directory
+    was not on PATH so the console script could not be found either.
+    """
+
+    def test_every_site_fails_once_with_a_setup_message(self):
+        import pipeline.screenshots as shots_mod
+
+        original = shots_mod.browser_ready
+        shots_mod.browser_ready = lambda: (False, "Executable doesn't exist")
+        try:
+            with tempfile.TemporaryDirectory() as tmp:
+                cap = ScreenshotCapturer(cache_dir=Path(tmp))
+                result = cap.capture_all(
+                    [(f"p{i}", "https://example.com") for i in range(5)])
+                self.assertEqual(len(result), 5)
+                self.assertTrue(all(not r.ok for r in result.values()))
+                self.assertTrue(
+                    all(r.reason == "chromium not installed" for r in result.values()))
+                # One log line for the run, not one per site.
+                self.assertEqual(len(cap.log), 1)
+                self.assertIn("playwright install chromium", cap.log[0])
+        finally:
+            shots_mod.browser_ready = original
+
+    def test_no_browser_is_never_a_scoring_signal(self):
+        """A run with no screenshots must still score exactly as before."""
+        from pipeline.scoring import Weights, score_business
+
+        weights = Weights.default()
+        business = {
+            "name": "X", "business_status": "OPERATIONAL",
+            "website": "https://x.co.uk", "rating": 4.8, "review_count": 60,
+            "site_score": {"verdict": "fine"},
+            "staleness": {"fetch_ok": True, "has_viewport": True,
+                          "has_media_queries": True, "copyright_age": 0,
+                          "uses_table_layout": False, "has_https": True,
+                          "has_flash": False, "platform_hint": None},
+            "screenshot_path": "",
+        }
+        with_shot = dict(business, screenshot_path="/tmp/a.png")
+        self.assertEqual(
+            score_business(business, weights).score,
+            score_business(with_shot, weights).score,
+        )
+
+    def test_injected_capturer_skips_the_browser_check(self):
+        """Tests and offline runs must not need a browser at all."""
+        calls = []
+
+        def fake(url, desktop, mobile):
+            calls.append(url)
+            desktop.parent.mkdir(parents=True, exist_ok=True)
+            png(desktop, (1440, 900))
+            png(mobile)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            result = ScreenshotCapturer(
+                cache_dir=Path(tmp), capture_one=fake
+            ).capture_all([("p1", "https://x")])
+            self.assertTrue(result["p1"].ok)
+            self.assertEqual(len(calls), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

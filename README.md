@@ -496,11 +496,47 @@ recapture. A site that fails to load writes no file and gets an empty
 `screenshot_path`; the reason lands in `screenshot-failures.log`, and the
 failure never earns points.
 
-Screenshots need a browser once:
+Screenshots need a browser downloaded once, separately from the package:
 
 ```bash
-playwright install chromium
+python -m playwright install chromium
 ```
+
+<details>
+<summary>Windows, and why the module form</summary>
+
+```powershell
+py -m playwright install chromium
+```
+
+Use `py -m playwright`, not the bare `playwright` command. pip installs
+console scripts into a `Scripts` directory that often isn't on `PATH` — pip
+even warns about it during install — so `playwright` alone frequently isn't
+found. The module form works regardless.
+
+If `pip install` printed dependency conflicts naming packages you don't
+recognise (chromadb, huggingface-hub, langchain-core, openai), those are
+unrelated packages already on your machine reporting *their* missing
+dependencies. pip lists every conflict it notices, not just ones your install
+caused. **Setup & configuration → Check setup** tells you what this project
+actually needs.
+</details>
+
+**Setup & configuration → Check setup** verifies all of this — each package,
+and whether a browser can actually launch — and prints a fix command naming
+the exact interpreter that needs it:
+
+```
+bs4              installed          (staleness detection)
+playwright       installed          (screenshots)
+PIL              installed          (contact sheet thumbnails)
+chromium         MISSING            (screenshots need a browser)
+                 fix: "C:\Program Files\Python314\python.exe" -m playwright install chromium
+```
+
+Without a browser the pipeline still runs and scores normally — screenshots
+are simply absent, reported once in `screenshot-failures.log` rather than as
+one failure per site, and their absence never affects a lead score.
 
 ---
 
@@ -707,7 +743,7 @@ batches/2026-09-01_physios_hitchin/
 ## Development
 
 ```bash
-python3 -m unittest discover -s tests -t .      # 289 tests, no network needed
+python3 -m unittest discover -s tests -t .      # 292 tests, no network needed
 ```
 
 Every network client takes an injectable transport, so the whole pipeline is
