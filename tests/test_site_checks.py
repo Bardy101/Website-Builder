@@ -24,7 +24,22 @@ class TestClassifyUrl(unittest.TestCase):
         self.assertEqual(classify_url("hitchinphysio.co.uk"), "real")
 
 
+def stale(**overrides):
+    """A fully healthy analysis; override to set individual signals."""
+    base = {"fetch_ok": True, "has_viewport": True, "has_media_queries": True,
+            "copyright_year": 2026, "copyright_age": 0, "uses_table_layout": False,
+            "has_https": True, "has_flash": False, "platform_hint": None}
+    base.update(overrides)
+    return base
+
+
 class TestVerdict(unittest.TestCase):
+    """Buckets come from staleness signals, not mobile score (brief 1.4)."""
+
+    def _check(self, **overrides):
+        return SiteCheck(True, False, mobile_score=overrides.pop("mobile", None),
+                         staleness=stale(**overrides))
+
     def test_no_site(self):
         c = SiteCheck(has_website=False, is_social_or_directory=False)
         self.assertEqual(verdict_from(c), "none")
@@ -33,33 +48,32 @@ class TestVerdict(unittest.TestCase):
         c = SiteCheck(has_website=True, is_social_or_directory=True)
         self.assertEqual(verdict_from(c), "social_only")
 
-    def test_no_https_is_poor(self):
-        c = SiteCheck(True, False, https=False, viewport=True, mobile_score=90)
-        self.assertEqual(verdict_from(c), "poor")
+    def test_no_staleness_signals_is_fine(self):
+        self.assertEqual(verdict_from(self._check()), "fine")
 
-    def test_slow_mobile_is_poor(self):
-        c = SiteCheck(True, False, https=True, viewport=True, mobile_score=31)
-        self.assertEqual(verdict_from(c), "poor")
+    def test_one_signal_is_poor(self):
+        self.assertEqual(verdict_from(self._check(has_https=False)), "poor")
 
-    def test_middling_is_dated(self):
-        c = SiteCheck(True, False, https=True, viewport=True, mobile_score=62)
+    def test_two_signals_is_dated(self):
+        c = self._check(has_viewport=False, has_media_queries=False)
         self.assertEqual(verdict_from(c), "dated")
 
-    def test_no_viewport_is_dated_even_when_fast(self):
-        c = SiteCheck(True, False, https=True, viewport=False, mobile_score=95)
-        self.assertEqual(verdict_from(c), "dated")
+    def test_stale_copyright_counts(self):
+        self.assertEqual(verdict_from(self._check(copyright_age=7)), "poor")
 
-    def test_good_is_fine(self):
-        c = SiteCheck(True, False, https=True, viewport=True, mobile_score=85)
-        self.assertEqual(verdict_from(c), "fine")
+    def test_fresh_copyright_does_not_count(self):
+        self.assertEqual(verdict_from(self._check(copyright_age=1)), "fine")
 
-    def test_unknown_score_falls_back_to_cheap_signals(self):
-        c = SiteCheck(True, False, https=True, viewport=False, mobile_score=None)
-        self.assertEqual(verdict_from(c), "dated")
+    def test_a_fast_site_is_not_rewarded_for_being_fast(self):
+        """The inversion the brief exists to fix: heavy modern site stays fine,
+        light dated site does not."""
+        modern = self._check(mobile=23)
+        dated = self._check(mobile=95, has_viewport=False, uses_table_layout=True)
+        self.assertEqual(verdict_from(modern), "fine")
+        self.assertEqual(verdict_from(dated), "dated")
 
-    def test_no_score_and_no_demotion_is_unknown_not_fine(self):
-        """No evidence must never produce the weakest-lead verdict."""
-        c = SiteCheck(True, False, https=True, viewport=True, mobile_score=None)
+    def test_failed_fetch_is_unknown_never_fine(self):
+        c = SiteCheck(True, False, staleness={"fetch_ok": False})
         self.assertEqual(verdict_from(c), "unknown")
 
 
@@ -81,16 +95,31 @@ class TestSiteChecker(unittest.TestCase):
         self.assertEqual(checker.check("https://facebook.com/x").verdict, "social_only")
 
     def test_real_site_uses_injected_transports(self):
-        html = '<html><head><meta name="viewport" content="width=device-width"></head></html>'
+        html = ('<html><head><meta name="viewport" content="width=device-width">'
+                '<style>@media(min-width:1px){a{color:red}}</style></head>'
+                '<body><footer>&copy; 2026</footer></body></html>')
         checker = SiteChecker(
             http_get=lambda url: (200, "https://example.co.uk", html),
             pagespeed=lambda url: 42,
         )
         result = checker.check("https://example.co.uk")
-        self.assertEqual(result.mobile_score, 42)
+        self.assertEqual(result.mobile_score, 42)  # kept for reference
         self.assertTrue(result.https)
         self.assertTrue(result.viewport)
-        self.assertEqual(result.verdict, "poor")
+        # A clean modern page: slow, but nothing stale about it.
+        self.assertEqual(result.verdict, "fine")
+
+    def test_one_fetch_serves_every_page_signal(self):
+        """The brief forbids fetching the same homepage twice."""
+        fetches = []
+
+        def http_get(url):
+            fetches.append(url)
+            return 200, "https://example.co.uk", "<html><head></head></html>"
+
+        SiteChecker(http_get=http_get, pagespeed=lambda url: 50).check(
+            "https://example.co.uk")
+        self.assertEqual(len(fetches), 1, fetches)
 
     def test_failed_fetch_degrades_gracefully(self):
         def fails(url):
@@ -102,6 +131,7 @@ class TestSiteChecker(unittest.TestCase):
         self.assertIsNone(result.mobile_score)
         # Nothing could be established, so nothing is claimed.
         self.assertEqual(result.verdict, "unknown")
+        self.assertFalse(result.staleness["fetch_ok"])
 
 
 

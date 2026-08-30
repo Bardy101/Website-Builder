@@ -35,7 +35,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 try:
-    from pipeline.cull import REASON_CODES, gut_share, reason_counts, split_shortlist
+    from pipeline.cull import (
+        REASON_CODES,
+        decisions_from_export,
+        gut_share,
+        reason_counts,
+        split_shortlist,
+    )
     from pipeline.storage import Batch, utcnow
 except ImportError as exc:
     if "pipeline" not in str(exc):
@@ -56,6 +62,10 @@ except ImportError as exc:
 def parse_args(argv=None):
     p = argparse.ArgumentParser(prog="cull.py", description=__doc__.split("\n")[0])
     p.add_argument("--batch", required=True, help="path to the batch folder")
+    p.add_argument(
+        "--import", dest="import_path", metavar="decisions.json",
+        help="apply decisions exported from a contact sheet",
+    )
     p.add_argument(
         "--from-csv",
         help="read decisions from a 'reason' column in this CSV instead of prompting",
@@ -174,7 +184,33 @@ def main(argv=None) -> int:
         if not rows:
             raise SystemExit(f"No shortlist.csv in {args.batch}. Run find.py first.")
 
-    if args.from_csv:
+    if args.import_path:
+        import json
+
+        path = Path(args.import_path)
+        if not path.is_absolute() and not path.is_file():
+            candidate = batch.path / args.import_path
+            if candidate.is_file():
+                path = candidate
+        if not path.is_file():
+            raise SystemExit(f"No such file: {args.import_path}")
+        try:
+            decisions = decisions_from_export(
+                json.loads(path.read_text(encoding="utf-8"))
+            )
+        except ValueError as exc:
+            raise SystemExit(f"{path.name}: {exc}") from None
+
+        known = {row["place_id"] for row in rows}
+        unknown = sorted(set(decisions) - known)
+        if unknown:
+            # Usually a sheet exported from a different batch.
+            raise SystemExit(
+                f"{path.name} names {len(unknown)} business(es) not in this "
+                f"list, e.g. {unknown[0]}. Is it the right batch?"
+            )
+        print(f"\nImported {len(decisions)} cull decision(s) from {path.name}.")
+    elif args.from_csv:
         csv_path = Path(args.from_csv)
         if not csv_path.is_absolute():
             candidate = batch.path / args.from_csv

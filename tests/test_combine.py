@@ -95,18 +95,21 @@ class TestCombine(unittest.TestCase):
         # no website (+40) + established (+15) under current weights.
         self.assertTrue(all(b["lead_score"] == 55 for b in merged))
 
-    def test_rescoring_applies_the_graded_band_to_old_records(self):
+    def test_rescoring_drops_the_superseded_mobile_score_signal(self):
+        """A record scored when mobile score still counted is re-scored
+        without it — brief 1.2 demotes it to a tiebreaker."""
         old_style = Batch.create(self.tmp.name, niche="dentist", area="x", name="b4")
         old_style.write_business(record(
             "D1", "Dated Dental", "dentist", "Hitchin",
             website="https://dated.example",
             site_score={"verdict": "dated", "mobile_score": 60,
                         "https": True, "viewport": True},
-            lead_score=15,  # what the cliff scoring stored
+            lead_score=27,  # what the mobile-score weights stored
         ))
         merged = combine_batches([old_style], weights=self.weights)
-        # +12 middling band + 15 established = 27 under v2 weights.
-        self.assertEqual(merged[0]["lead_score"], 27)
+        # No staleness evidence on the old record, so only the review signal
+        # scores: mobile 60 now earns nothing at all.
+        self.assertEqual(merged[0]["lead_score"], 15)
 
     def test_sorted_worst_presence_first(self):
         merged = combine_batches(self.all_batches, weights=self.weights)

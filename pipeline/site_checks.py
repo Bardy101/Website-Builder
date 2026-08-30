@@ -1,21 +1,30 @@
-"""Lightweight website checks: HTTPS, viewport meta, PageSpeed mobile score,
-and a human-readable ``site_verdict``.
+"""Website checks and the human-readable ``site_verdict``.
 
-The verdict is the single column a human scans (spec section 2):
+Brief: docs/briefs/brief-visual-quality-signal.md, part 1.4. The verdict now
+comes from how *stale* a site looks, not how slowly it loads — mobile score
+survives only as a tiebreaker and a reference column.
+
     none        -> no website at all (best lead)
-    social_only -> website is a Facebook page / directory URL (effectively none)
-    poor        -> real site but slow on mobile or no HTTPS (visible problem)
-    dated       -> real site, ok-ish, but not mobile-friendly / middling score
-    fine        -> genuinely good enough; a weak lead
+    social_only -> a Facebook/Instagram page as the website
+    dated       -> 2+ staleness signals set
+    poor        -> exactly 1 staleness signal set
+    fine        -> 0 staleness signals set
+    unknown     -> the site could not be fetched, so nothing was established
+
+``unknown`` is not in the brief's bucket list. It is kept because calling an
+unreachable site "fine" would bury a possible prospect on no evidence, which
+the fail-open rule exists to prevent. Flagged to the operator.
 
 Pure classification is kept separate from the network so it can be tested
-without hitting any API.
+without hitting anything.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Optional
+
+from .staleness import analyse_staleness, signal_count
 from urllib.parse import urlparse
 
 # Hosts that mean "they don't really have a site" (spec: Facebook page /
@@ -64,36 +73,28 @@ class SiteCheck:
     is_social_or_directory: bool
     https: Optional[bool] = None
     viewport: Optional[bool] = None
+    # Reference and tiebreak only — it no longer contributes to lead_score.
     mobile_score: Optional[int] = None  # 0-100 PageSpeed mobile performance
+    staleness: Optional[dict] = None
     verdict: str = "none"
 
 
-def verdict_from(
-    check: SiteCheck,
-    *,
-    mobile_score_poor: int = 50,
-    mobile_score_dated_max: int = 70,
-) -> str:
-    """Derive the site_verdict from the raw signals."""
+def verdict_from(check: "SiteCheck", *, stale_years: int = 3) -> str:
+    """Bucket a site by how many staleness signals fired."""
     if not check.has_website:
         return "none"
     if check.is_social_or_directory:
         return "social_only"
-    # Real site from here on.
-    if check.https is False:
-        return "poor"
-    if check.mobile_score is not None:
-        if check.mobile_score < mobile_score_poor:
-            return "poor"
-        if check.mobile_score < mobile_score_dated_max or check.viewport is False:
-            return "dated"
-        return "fine"
-    # No mobile score available (PageSpeed failed / no key): the cheap
-    # signals can still demote, but nothing here can prove a site "fine".
-    # Guessing "fine" would bury a potentially good lead; say "unknown".
-    if check.viewport is False:
+    analysis = check.staleness or {}
+    if not analysis.get("fetch_ok"):
+        # Nothing could be established. Never claim "fine" on no evidence.
+        return "unknown"
+    count = signal_count(analysis, stale_years=stale_years)
+    if count >= 2:
         return "dated"
-    return "unknown"
+    if count == 1:
+        return "poor"
+    return "fine"
 
 
 class SiteChecker:
@@ -183,23 +184,51 @@ class SiteChecker:
             result.verdict = "social_only"
             return result
 
-        # Real site: gather signals (cached where possible).
+        # One fetch supplies every page-derived signal, including https and
+        # viewport — the brief forbids fetching the same homepage twice.
         assert website is not None
-        https, viewport = self._fetch_page_signals(website)
+        analysis = self._staleness(website)
         mobile = self._mobile_score(website)
         result = SiteCheck(
             has_website=True,
             is_social_or_directory=False,
-            https=https,
-            viewport=viewport,
+            https=analysis.get("has_https"),
+            viewport=analysis.get("has_viewport"),
             mobile_score=mobile,
+            staleness=analysis,
         )
         result.verdict = verdict_from(
-            result,
-            mobile_score_poor=self.thresholds.get("mobile_score_poor", 50),
-            mobile_score_dated_max=self.thresholds.get("mobile_score_dated_max", 70),
+            result, stale_years=self.thresholds.get("copyright_stale_years", 3)
         )
         return result
+
+    def _staleness(self, url: str) -> dict:
+        """Staleness analysis, cached for the TTL like every external signal."""
+        def fetch():
+            # Route through this checker's transport so an injected one is
+            # honoured, and so there is a single fetch path to reason about.
+            def adapter(target: str, timeout: float):
+                try:
+                    status, final_url, html = self._http_get(target)
+                except Exception:
+                    return None
+                if status and status >= 400:
+                    return None
+                return final_url, html
+
+            return analyse_staleness(url, fetch=adapter)
+
+        if self.cache is None:
+            return fetch()
+        # A failed analysis returns fetch_ok False; caching that would hide a
+        # transient outage for 30 days, so only successes are stored.
+        cached = self.cache.get("staleness", url)
+        if isinstance(cached, dict) and cached.get("fetch_ok"):
+            return cached
+        fresh = fetch()
+        if fresh.get("fetch_ok"):
+            self.cache.set("staleness", url, fresh)
+        return fresh
 
     def _fetch_page_signals(self, url: str):
         def fetch():

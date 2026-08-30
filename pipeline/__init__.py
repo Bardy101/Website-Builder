@@ -1,6 +1,6 @@
 """Postal Outreach Pipeline.
 
-Phase 0 — the prospect finder. See BUILD-SPEC / README.
+Phase 0 — the prospect finder. See docs/postal-pipeline-build-spec.md.
 
 This package turns a niche + area into a ranked shortlist of candidate
 businesses (worst web presence first) with everything needed to decide,

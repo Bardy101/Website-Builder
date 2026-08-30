@@ -75,3 +75,44 @@ def gut_share(rejections: list[dict]) -> float:
     if not rejections:
         return 0.0
     return reason_counts(rejections).get("gut", 0) / len(rejections)
+
+
+def decisions_from_export(payload) -> dict[str, str]:
+    """Turn a contact sheet's decisions.json into a place_id -> reason map.
+
+    Only culls carry a reason; keeps are simply absent from the map, which is
+    what split_shortlist expects. An unknown reason code is rejected rather
+    than silently coerced, because free text would poison the tuning data.
+    """
+    if not isinstance(payload, list):
+        raise ValueError("decisions.json must be a list of decisions")
+
+    decisions: dict[str, str] = {}
+    for entry in payload:
+        if not isinstance(entry, dict):
+            raise ValueError(f"Not a decision object: {entry!r}")
+        place_id = entry.get("place_id")
+        if not place_id:
+            raise ValueError(f"Decision without a place_id: {entry!r}")
+        decision = (entry.get("decision") or "").strip().lower()
+        if decision == "keep":
+            continue
+        if decision != "cull":
+            raise ValueError(
+                f"'{place_id}': decision must be 'keep' or 'cull', got "
+                f"'{entry.get('decision')}'"
+            )
+        reason = (entry.get("reason") or "").strip().lower()
+        if not reason:
+            raise ValueError(
+                f"'{entry.get('name') or place_id}' was culled with no reason "
+                "code. Pick one in the sheet and export again — free text and "
+                "blanks would make the rejection useless to tune.py."
+            )
+        if reason not in REASON_CODES:
+            raise ValueError(
+                f"'{entry.get('name') or place_id}': unknown reason code "
+                f"'{reason}'. Use one of: {', '.join(sorted(REASON_CODES))}"
+            )
+        decisions[place_id] = reason
+    return decisions

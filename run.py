@@ -283,11 +283,23 @@ def action_cull() -> None:
     print("\nHow would you like to review it?\n")
     print("  1  One at a time here (shows the links, you type keep or a reason)")
     print("  2  In a spreadsheet (add a 'reason' column, save, then import it)")
+    print("  3  Apply decisions.json exported from a contact sheet")
     choice = ask("\nNumber", "1")
 
     import cull
 
     extra = ["--full"] if start_over else []
+
+    if choice == "3":
+        default = str(Path.home() / "Downloads" / "decisions.json")
+        if not Path(default).is_file():
+            default = "decisions.json"
+        path = ask("Path to decisions.json", default).strip()
+        try:
+            cull.main(["--batch", str(folder), "--import", path] + extra)
+        except SystemExit as exc:
+            print(exc.code if isinstance(exc.code, str) else "")
+        return
     if choice == "2":
         csv_name = (
             "approved.csv" if already_culled and not start_over else "shortlist.csv"
@@ -639,13 +651,45 @@ def action_config() -> None:
 action_config.handles_own_pause = True
 
 # Ordered as the work actually flows: find, cull, combine, open, tune.
+
+def action_contactsheet() -> None:
+    """Build the visual cull sheet — the brief's primary cull mechanism."""
+    folder = choose_batch("build a contact sheet for")
+    if folder is None:
+        return
+    batch = Batch(folder)
+    use_approved = False
+    if batch.approved_path.is_file():
+        use_approved = ask_yes_no(
+            "This batch was culled — show only the approved rows?", True)
+
+    import contactsheet
+
+    argv = ["--batch", str(folder)]
+    if use_approved:
+        argv.append("--approved")
+    try:
+        contactsheet.main(argv)
+    except SystemExit as exc:
+        print(exc.code if isinstance(exc.code, str) else "")
+        return
+
+    sheet = Path(folder) / "contactsheet.html"
+    if sheet.is_file() and ask_yes_no("\nOpen it now?", True):
+        open_in_default_app(sheet)
+        print("\nKeep or cull each tile, pick a reason for the culls, then")
+        print("click Export decisions. Come back here and choose 'Review a")
+        print("shortlist' to apply the downloaded decisions.json.")
+
+
 MENU = [
     ("1", "Find prospects (one or several niches/towns)", action_find),
-    ("2", "Review a shortlist (cull to your 10-15)", action_cull),
-    ("3", "Combine batches into one sheet (by niche or town)", action_combine),
-    ("4", "Open a shortlist in your spreadsheet app", action_open),
-    ("5", "Tune the scoring from your decisions", action_tune),
-    ("6", "Setup & configuration (keys, checks, tests)", action_config),
+    ("2", "Build a contact sheet (cull by eye, from screenshots)", action_contactsheet),
+    ("3", "Review a shortlist (cull to your 10-15)", action_cull),
+    ("4", "Combine batches into one sheet (by niche or town)", action_combine),
+    ("5", "Open a shortlist in your spreadsheet app", action_open),
+    ("6", "Tune the scoring from your decisions", action_tune),
+    ("7", "Setup & configuration (keys, checks, tests)", action_config),
 ]
 
 

@@ -27,6 +27,16 @@ SHORTLIST_COLUMNS = [
     "town",
     "website",
     "site_verdict",
+    # Brief part 1.3 — the staleness evidence, so the score is auditable at a
+    # glance during the cull.
+    "has_viewport",
+    "has_media_queries",
+    "copyright_year",
+    "uses_table_layout",
+    "has_flash",
+    "platform_hint",
+    "staleness_points",
+    "screenshot_path",
     "mobile_score",
     "https",
     "rating",
@@ -199,8 +209,22 @@ def business_to_row(business: dict) -> dict:
         if site_contact.get("role"):
             site_label += f" ({site_contact['role']})"
 
+    stale = business.get("staleness") or {}
+
+    def tri(value):
+        """Blank for unknown — never print a guess as a fact."""
+        return "" if value is None else ("yes" if value else "no")
+
     return {
         "lead_score": business.get("lead_score", 0),
+        "has_viewport": tri(stale.get("has_viewport")),
+        "has_media_queries": tri(stale.get("has_media_queries")),
+        "copyright_year": stale.get("copyright_year") or "",
+        "uses_table_layout": tri(stale.get("uses_table_layout")),
+        "has_flash": tri(stale.get("has_flash")),
+        "platform_hint": stale.get("platform_hint") or "",
+        "staleness_points": business.get("staleness_points", 0),
+        "screenshot_path": business.get("screenshot_path") or "",
         "address_to": addressee.get("address_to") or "",
         # 'differ' and 'likely_same' are the rows worth ten seconds of your eyes.
         "contact_check": addressee.get("verdict") or "",

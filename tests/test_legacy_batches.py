@@ -131,8 +131,10 @@ class TestLegacyCull(LegacyBatchCase):
 class TestLegacyCombine(LegacyBatchCase):
     def test_combine_rescores_under_current_weights(self):
         merged = combine_batches([self.batch], weights=self.weights)
-        # +12 graded middling band + 15 established, up from the stored 15.
-        self.assertEqual(merged[0]["lead_score"], 27)
+        # The stored 15 was a mobile-score era value. Re-scored under the
+        # staleness weights: +15 established, +5 reviewed recently. The old
+        # record carries no staleness evidence, so nothing else can fire.
+        self.assertEqual(merged[0]["lead_score"], 20)
 
     def test_combine_derives_an_addressee_from_stored_data(self):
         merged = combine_batches([self.batch], weights=self.weights)

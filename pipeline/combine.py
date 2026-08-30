@@ -18,7 +18,7 @@ from __future__ import annotations
 from typing import Iterable, Optional
 
 from .addressee import decide as decide_addressee
-from .scoring import Weights, score_business
+from .scoring import Weights, score_business, sort_key, staleness_points
 from .storage import Batch, business_to_row
 
 
@@ -63,6 +63,7 @@ def combine_batches(
             record = dict(business)
             record["lead_score"] = result.score
             record["score_breakdown"] = result.breakdown
+            record["staleness_points"] = staleness_points(record, weights)
             record["combined_from"] = batch.path.name
             # Recompute rather than copy: batches written before the website
             # contact lookup existed have no addressee at all, and the
@@ -80,14 +81,7 @@ def combine_batches(
             if existing is None or record["lead_score"] > existing["lead_score"]:
                 by_id[place_id] = record
 
-    merged = sorted(
-        by_id.values(),
-        key=lambda b: (
-            -b["lead_score"],
-            -(b.get("review_count") or 0),
-            b.get("name") or "",
-        ),
-    )
+    merged = sorted(by_id.values(), key=sort_key)
     if top:
         merged = merged[:top]
     return merged

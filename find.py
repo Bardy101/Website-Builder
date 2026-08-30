@@ -32,6 +32,7 @@ try:
     from pipeline.places import PlacesClient
     from pipeline.scoring import Weights
     from pipeline.site_checks import SiteChecker
+    from pipeline.screenshots import ScreenshotCapturer
     from pipeline.site_contacts import SiteContactFinder
     from pipeline.storage import Batch
 except ImportError as exc:
@@ -74,6 +75,16 @@ def parse_args(argv=None):
         "--no-owner-lookup",
         action="store_true",
         help="skip the Companies House owner lookup",
+    )
+    p.add_argument(
+        "--no-screenshots",
+        action="store_true",
+        help="skip screenshot capture (the contact sheet then has no images)",
+    )
+    p.add_argument(
+        "--refresh-screenshots",
+        action="store_true",
+        help="recapture screenshots even if cached",
     )
     p.add_argument(
         "--no-site-contacts",
@@ -120,7 +131,7 @@ def build_clients(args, config: Config):
         places = FixturePlacesClient.from_file(args.fixture)
         # Offline means no live site checks or Companies House calls; the
         # fixture may still carry site_score values of its own.
-        return places, None, None, None
+        return places, None, None, None, None
 
     places = PlacesClient(api_key=config.google_places_api_key, cache=cache)
     checker = (
@@ -138,7 +149,11 @@ def build_clients(args, config: Config):
         else CompaniesHouseClient(api_key=config.companies_house_api_key, cache=cache)
     )
     contacts = None if args.no_site_contacts else SiteContactFinder(cache=cache)
-    return places, checker, ch, contacts
+    shots = None if args.no_screenshots else ScreenshotCapturer(
+        cache_dir=Path(config.cache_dir),
+        refresh=args.refresh_screenshots,
+    )
+    return places, checker, ch, contacts, shots
 
 
 def main(argv=None) -> int:
@@ -148,7 +163,7 @@ def main(argv=None) -> int:
 
     config = Config.from_env()
     weights = Weights.load(args.weights)
-    places, checker, ch, contacts = build_clients(args, config)
+    places, checker, ch, contacts, shots = build_clients(args, config)
     say = (lambda _m: None) if args.quiet else (lambda m: print(m, flush=True))
 
     # The demo fixture holds a handful of invented businesses, not the whole
@@ -186,6 +201,7 @@ def main(argv=None) -> int:
                     site_checker=checker,
                     companies_house=ch,
                     site_contacts=contacts,
+                    screenshots=shots,
                     weights=weights,
                     radius_m=pair.get("radius", radius),
                     top=top_each,
@@ -208,6 +224,7 @@ def main(argv=None) -> int:
             site_checker=checker,
             companies_house=ch,
             site_contacts=contacts,
+            screenshots=shots,
             weights=weights,
             radius_m=args.radius,
             top=args.top,
@@ -219,6 +236,13 @@ def main(argv=None) -> int:
         )
 
     write_batch(batch, result)
+
+    if shots is not None and shots.log:
+        from pipeline.screenshots import write_capture_log
+
+        log_path = write_capture_log(batch.path, shots.log)
+        say(f"\n{len(shots.log)} screenshot(s) could not be captured — "
+            f"reasons in {log_path.name}")
 
     say("")
     say(f"Shortlist:  {batch.shortlist_path}")

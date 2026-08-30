@@ -21,6 +21,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Optional
 
+from .staleness import MODERN_PLATFORMS, staleness_flags
+
 DEFAULT_WEIGHTS_PATH = "weights.json"
 
 
@@ -59,17 +61,23 @@ class Weights:
             signals={
                 "no_website": 40,
                 "social_or_directory_only": 30,
-                "mobile_score_below_50": 25,
+                "no_viewport": 25,
+                "no_media_queries": 15,
+                "copyright_stale": 15,
+                "table_layout": 15,
                 "no_https": 15,
+                "flash": 10,
                 "established_and_reputable": 15,
                 "too_few_reviews": -20,
+                "recent_review_activity": 5,
+                "modern_platform": -15,
             },
             thresholds={
-                "mobile_score_poor": 50,
-                "mobile_score_dated_max": 70,
                 "established_min_reviews": 20,
-                "established_min_rating": 4.3,
+                "established_min_rating": 4.0,
                 "too_few_reviews_max": 5,
+                "recent_review_days": 90,
+                "copyright_stale_years": 3,
             },
             exclude={"non_operational": True, "chain_or_franchise": True},
             chain_names=[],
@@ -126,19 +134,20 @@ def score_business(business: dict[str, Any], weights: Weights) -> ScoreResult:
     elif verdict == "social_only":
         breakdown["social_or_directory_only"] = sig.get("social_or_directory_only", 30)
     else:
-        mobile = site.get("mobile_score")
-        if mobile is not None:
-            if mobile < thr.get("mobile_score_poor", 50):
-                breakdown["mobile_score_below_50"] = sig.get("mobile_score_below_50", 25)
-            elif mobile < thr.get("mobile_score_dated_max", 70):
-                # The graded band: without it, mobile 51 scored the same as
-                # a flawless 95, and 49 vs 51 swung a full 25 points. A
-                # visibly middling site now outranks a fine one.
-                breakdown["mobile_score_middling"] = sig.get("mobile_score_middling", 12)
-        if site.get("viewport") is False:
-            breakdown["no_viewport"] = sig.get("no_viewport", 10)
-        if site.get("https") is False:
-            breakdown["no_https"] = sig.get("no_https", 15)
+        # Staleness, not slowness. Each flag is only set where the evidence
+        # was positively established, so a failed fetch scores nothing.
+        flags = staleness_flags(
+            business.get("staleness") or {},
+            stale_years=thr.get("copyright_stale_years", 3),
+        )
+        for name, fired in flags.items():
+            if fired:
+                breakdown[name] = sig.get(name, 0)
+
+        # A recognised managed platform means someone pays for this site.
+        platform = (business.get("staleness") or {}).get("platform_hint")
+        if platform in MODERN_PLATFORMS:
+            breakdown["modern_platform"] = sig.get("modern_platform", -15)
 
     rating = business.get("rating")
     reviews = business.get("review_count")
@@ -146,10 +155,57 @@ def score_business(business: dict[str, Any], weights: Weights) -> ScoreResult:
         reviews is not None
         and rating is not None
         and reviews >= thr.get("established_min_reviews", 20)
-        and rating >= thr.get("established_min_rating", 4.3)
+        and rating >= thr.get("established_min_rating", 4.0)
     ):
         breakdown["established_and_reputable"] = sig.get("established_and_reputable", 15)
     if reviews is not None and reviews < thr.get("too_few_reviews_max", 5):
         breakdown["too_few_reviews"] = sig.get("too_few_reviews", -20)
+    if _reviewed_recently(business, thr.get("recent_review_days", 90)):
+        breakdown["recent_review_activity"] = sig.get("recent_review_activity", 5)
 
     return ScoreResult(sum(breakdown.values()), False, None, breakdown)
+
+
+def _reviewed_recently(business: dict, within_days: int) -> bool:
+    """Still trading properly — the best dormancy signal we have (spec section 2)."""
+    from datetime import datetime, timezone
+
+    from .places import most_recent_review_date
+
+    latest = most_recent_review_date(business)
+    if not latest:
+        return False
+    try:
+        when = datetime.strptime(latest, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return False
+    return (datetime.now(timezone.utc) - when).days <= within_days
+
+
+def staleness_points(business: dict, weights: Weights) -> int:
+    """Subtotal from the staleness signals alone, for the CSV column.
+
+    Uses the same flag set as the verdict, so the number a human reads during
+    the cull and the bucket they see can never disagree.
+    """
+    flags = staleness_flags(
+        business.get("staleness") or {},
+        stale_years=weights.thresholds.get("copyright_stale_years", 3),
+    )
+    return sum(weights.signals.get(name, 0) for name, fired in flags.items() if fired)
+
+
+def sort_key(business: dict):
+    """Rank by lead_score, breaking ties on mobile score ascending.
+
+    A low mobile score with no staleness flags is a rich modern site, not a
+    neglected one, so the tiebreak only ever separates equal lead scores — it
+    can never lift such a site on its own.
+    """
+    mobile = (business.get("site_score") or {}).get("mobile_score")
+    return (
+        -business.get("lead_score", 0),
+        mobile if mobile is not None else 101,
+        -(business.get("review_count") or 0),
+        business.get("name") or "",
+    )

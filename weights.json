@@ -1,23 +1,27 @@
 {
-  "_comment": "Lead-scoring weights for the discover stage. Keep versioned; note the batch number that produced each change. v2: graded mobile-score band (50-69 now earns points, as does a missing viewport) after batch-one review showed visibly dated sites tying with flawless ones.",
-  "_version": 2,
+  "_comment": "Lead-scoring weights. v3 implements brief-visual-quality-signal.md: PageSpeed mobile score no longer scores (tiebreaker only) and staleness signals replace it. The spec's section 4 table is superseded on this point.",
+  "_version": 3,
   "_changed_by_batch": 0,
   "signals": {
     "no_website": 40,
     "social_or_directory_only": 30,
-    "mobile_score_below_50": 25,
-    "mobile_score_middling": 12,
-    "no_viewport": 10,
+    "no_viewport": 25,
+    "no_media_queries": 15,
+    "copyright_stale": 15,
+    "table_layout": 15,
     "no_https": 15,
+    "flash": 10,
     "established_and_reputable": 15,
-    "too_few_reviews": -20
+    "too_few_reviews": -20,
+    "recent_review_activity": 5,
+    "modern_platform": -15
   },
   "thresholds": {
-    "mobile_score_poor": 50,
-    "mobile_score_dated_max": 70,
     "established_min_reviews": 20,
-    "established_min_rating": 4.3,
-    "too_few_reviews_max": 5
+    "established_min_rating": 4.0,
+    "too_few_reviews_max": 5,
+    "recent_review_days": 90,
+    "copyright_stale_years": 3
   },
   "exclude": {
     "non_operational": true,

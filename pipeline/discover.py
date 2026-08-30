@@ -16,7 +16,7 @@ from typing import Any, Callable, Iterable, Optional
 
 from .addressee import decide as decide_addressee
 from .places import normalise_place
-from .scoring import Weights, score_business
+from .scoring import Weights, score_business, sort_key, staleness_points
 from .site_checks import classify_url
 from .storage import Batch, business_to_row, slugify, utcnow
 
@@ -36,6 +36,7 @@ def discover(
     site_checker=None,
     companies_house=None,
     site_contacts=None,
+    screenshots=None,
     weights: Optional[Weights] = None,
     radius_m: int = 8000,
     top: int = 25,
@@ -126,6 +127,9 @@ def discover(
             "https": None,
             "viewport": None,
         }
+        business["staleness"] = {}
+        business["staleness_points"] = 0
+        business["screenshot_path"] = ""
         pending.append(business)
 
     # Enrichment is the slow part — PageSpeed alone runs 20-30s per site and
@@ -141,6 +145,23 @@ def discover(
         say=say,
     )
 
+    # Screenshots come after enrichment so only surviving candidates are
+    # captured. Cached by place_id, so a re-run captures nothing new.
+    if screenshots is not None and pending:
+        shots = screenshots.capture_all(
+            [(b["place_id"], b.get("website") or "") for b in pending]
+        )
+        for business in pending:
+            shot = shots.get(business["place_id"])
+            if shot and shot.ok and shot.mobile:
+                business["screenshot_path"] = str(shot.mobile)
+                business["screenshot_desktop"] = str(shot.desktop)
+            else:
+                # No file, empty path — the reason is in the capturer's log.
+                business["screenshot_path"] = ""
+        say(f"  screenshots: {sum(1 for s in shots.values() if s.ok)} of "
+            f"{len(shots)} captured")
+
     for business in pending:
         business["addressee"] = decide_addressee(
             business.get("owner"),
@@ -155,14 +176,13 @@ def discover(
             continue
         business["lead_score"] = result.score
         business["score_breakdown"] = result.breakdown
+        business["staleness_points"] = staleness_points(business, weights)
         businesses.append(business)
         say(f"  scored {result.score:>4}  {business.get('name')}")
 
-    # Worst web presence first; ties broken by review count so the more
-    # established of two equally weak sites is the better prospect.
-    businesses.sort(
-        key=lambda b: (-b["lead_score"], -(b.get("review_count") or 0), b.get("name") or "")
-    )
+    # Worst web presence first. Mobile score breaks ties only — see
+    # scoring.sort_key for why it must never rank on its own.
+    businesses.sort(key=sort_key)
     top_businesses = businesses[:top]
     rows = [business_to_row(b) for b in top_businesses]
     return DiscoverResult(rows=rows, businesses=top_businesses, excluded=excluded)
@@ -178,6 +198,7 @@ def _enrich_one(business, site_checker, companies_house, site_contacts) -> None:
             "https": check.https,
             "viewport": check.viewport,
         }
+        business["staleness"] = check.staleness or {}
 
     if companies_house is not None:
         found = companies_house.lookup(
@@ -245,10 +266,7 @@ def merge_results(results: Iterable[DiscoverResult]) -> DiscoverResult:
             if pid not in by_id or business["lead_score"] > by_id[pid]["lead_score"]:
                 by_id[pid] = business
         excluded.extend(result.excluded)
-    merged = sorted(
-        by_id.values(),
-        key=lambda b: (-b["lead_score"], -(b.get("review_count") or 0), b.get("name") or ""),
-    )
+    merged = sorted(by_id.values(), key=sort_key)
     return DiscoverResult(
         rows=[business_to_row(b) for b in merged], businesses=merged, excluded=excluded
     )

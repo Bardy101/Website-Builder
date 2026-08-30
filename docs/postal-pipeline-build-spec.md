@@ -192,21 +192,44 @@ One Claude API call per business, with a fixed system prompt and the business re
 **Input:** `business.json` + `copy.json`
 **Output:** `preview/index.html` + assets, published to a static host; `insert.png` screenshot.
 
-Three tiers. Build tier 1 today, tier 2 as soon as batch one has gone out.
+### The substrate decision (read this before building anything)
 
-### Tier 1 — hand-built (batch one only)
-Script prints a fully formed prompt for Lovable/Framer using the business record and mockup copy. You paste it, tidy for five minutes, screenshot the hero + one section, drop the screenshot in as `insert.png`, paste the published URL into `business.json`. Ten businesses ≈ 90 minutes.
+**Premium feel does not come from the builder. It comes from the template.** No AI generator supplies taste you don't have — they reliably produce competent, generic layouts, which is the one thing that kills the premise of the letter. A bought, professionally designed template supplies the typography, spacing and colour decisions a designer already made; your job reduces to filling it in well, which is a job you can do.
+
+**Buy two or three premium HTML/Tailwind templates.** Roughly £30–80 each from the usual marketplaces, or a Tailwind component library. Pick them by target shape, not by industry label: a clinic/practice layout and a professional-services layout between them cover physios, accountants and conveyancers. You own the files.
+
+Critically, the same files serve tier 1 and tier 2 — hand-edited for batch one, variable-ised for the script afterwards. **Batch one is therefore practice for the automation, not a detour from it.**
+
+**Rejected substrates and why:**
+
+| Tool | Verdict |
+|---|---|
+| **Lovable** | Wrong category. It builds full-stack React apps with auth and a database; you need a brochure page. Output is functional but not design-optimised, and it produces generic layouts needing manual polish. |
+| **Framer** | Genuinely premium output and fast — but **no code export and locked hosting**. Fine for hand-building ten mockups, fatal at tier 2, because template-fill depends on a script injecting fields and publishing. Build a Framer workflow now and you throw it away in six weeks. |
+| **Bought HTML/Tailwind templates** | **Chosen.** Premium by default, fully scriptable, you own the files, publishes anywhere for pennies. |
+
+Two things that do more for perceived quality than any tool choice: **real photography** (Places photos are frequently poor — budget a few decent stock shots per niche) and **restraint** (generous whitespace, two fonts maximum, one accent colour lifted from their existing branding). Amateur sites look amateur because they're crowded, not because the components are bad.
+
+### Tier 1 — hand-filled templates (batch one)
+
+Copy the bought template into `preview/`, then by hand: swap the business name and logo, set the accent colour from their branding, drop in photos, paste the copy from `copy.json`. Screenshot the hero plus one section as `insert.png`, publish, paste the URL into `business.json`.
+
+Fifteen minutes each once you've done two. Ten businesses ≈ 2–3 hours. **While doing this, keep a running note of every field you had to change** — that list *is* the tier 2 variable schema, and collecting it is half the reason tier 1 exists.
 
 ### Tier 2 — template-fill (the target state)
-- Three or four industry templates as Jinja2 HTML: **trades** (plumber/roofer/electrician), **clinic** (physio/dentist/osteo), **professional** (accountant/solicitor), **generic local service**. Each is a single-page site: hero with phone + CTA, services grid, about, reviews, map embed, contact/hours, footer.
+
+- The tier 1 templates, with every field you noted swapped for a Jinja2 variable. Cover **trades** (plumber/roofer/electrician), **clinic** (physio/dentist/osteo), **professional** (accountant/solicitor), and a **generic local service** fallback. Each a single-page site: hero with phone + CTA, services grid, about, reviews, map embed, contact/hours, footer.
 - Script picks the template by niche, fills it from `business.json` + `copy.json`, pulls a dominant colour from their logo/photos (or a safe niche palette if none), writes `preview/index.html`, and publishes to `preview.yourdomain.co.uk/p/<slug>` (S3 + CloudFront, or Cloudflare Pages — either is pennies).
 - Screenshot with Playwright at 1440×900 and 390×844 → `insert.png` (desktop) plus a phone-frame variant for the letter.
 - Add a thin banner across the top of every preview: "A first-draft concept for [Business], prepared by [You] — nothing here is live or published on your behalf." This matters both for honesty and so an owner who scans it isn't confused.
 - **Preview page includes the opt-in form:** "Want the full walkthrough video? Leave your email." Unticked consent checkbox, privacy link, timestamped submission stored (SES email to you + a JSON append). This is the compliant follow-up trigger.
 - Previews expire after 60 days (or on request) — a nightly job unpublishes anything past its date unless flagged `keep`.
 
+**Template licensing:** check the licence before buying. You need one that permits use across multiple end-client projects, or a per-client licence cheap enough to buy on each sale. A preview is arguably not a delivered product, but once a client says yes it certainly is — don't discover this at invoice time.
+
 ### Tier 3 — bespoke generation (optional, later)
-Only if template-fill feels samey. Claude writes the full page from a design brief, Playwright screenshots it, a second Claude call reviews the screenshot for obvious breakage, and you still eyeball before it publishes. Not worth building until tier 2 has run for a few batches.
+
+Only if template-fill feels samey. Claude writes the full page against the bought template's design language as a brief, Playwright screenshots it, a second Claude call reviews the screenshot for obvious breakage, and you still eyeball before it publishes. Not worth building until tier 2 has run for a few batches.
 
 ---
 
@@ -308,12 +331,13 @@ Grouped into phases. Each phase ends with something usable, so you can stop, run
 | Approval sheet + approve/reject scripts | 1 hour | — |
 | **Batch one: 10–15 letters across three arms, tier-1 hand-built mockups, expensive-looking physical spec** | 1 weekend | Posted. This is the go/no-go experiment |
 
-Hand-building three or four mockups here is deliberate, not a shortcut: it's what tells you which sections, fields and photos the template actually needs. Build the template blind and you'll build it twice.
+Hand-filling the bought templates here is deliberate, not a shortcut: the list of fields you change by hand becomes the tier 2 variable schema. Build the template blind and you'll build it twice. Buy the templates *before* batch one, not after — tier 1 and tier 2 share the same files.
 
 ### Phase 2 — remove yourself from the mockup job
 
 | Step | Effort | Gate |
 |---|---|---|
+| Buy 2–3 premium HTML/Tailwind templates | 1 hour + ~£100 | Templates you'd be proud to put your name on |
 | Template-fill (tier 2), first template | 2 evenings | Preview you'd show a client |
 | Remaining templates | 1 evening each | — |
 | `tune.py` weight proposals | 1 hour, after batch two | Only once you have rejections to learn from |
@@ -325,9 +349,35 @@ Roughly one evening to phase 0, three more to first batch, another three or four
 
 ---
 
+> **Amendment — visual quality signal. IMPLEMENTED.** The lead score
+> originally used PageSpeed mobile score as a website-quality proxy. It isn't
+> one, and the signal proved inverted in the first live run: dated sparse sites
+> score well, good rich sites score badly. Sections 2 and 4 are superseded on
+> this point by `briefs/done/brief-visual-quality-signal.md`, which demotes
+> mobile score to a tiebreaker, adds staleness detection (viewport tag, media
+> queries, copyright age, table layout, Flash, platform hint) and introduces
+> screenshot capture plus a contact-sheet cull. **Read the brief, not the
+> weights table in section 4** — that table is now historical.
+>
+> Two further points where the shipped code knowingly differs from what these
+> documents say, flagged for the operator rather than silently adopted:
+>
+> - **`site_verdict` has a sixth bucket, `unknown`,** for a site that could not
+>   be fetched. Neither the spec's five buckets nor the brief's four cover that
+>   case, and calling an unreachable site `fine` would bury a possible prospect
+>   on no evidence — the opposite of the fail-open rule. If the operator would
+>   rather such rows were dropped or bucketed differently, that is a design
+>   decision to make in conversation.
+> - **Section 2's shortlist columns are out of date.** The live CSV also
+>   carries the staleness columns from the brief, plus contact-reconciliation
+>   columns (`address_to`, `contact_check`, `site_contact`, `contact_email`)
+>   from the section 5 step-2 owner lookup. Section 2's table should be
+>   refreshed when someone next revises the spec.
+
 ## 15. Open decisions
 
 - Preview host: S3/CloudFront vs Cloudflare Pages.
+- Which template marketplace, and whether the licence covers multi-client use.
 - Short-URL domain: buy a short one or use a path on your main domain.
 - First niche for batch one (recommendation: physios or accountants — static content, mostly ltd companies, review-conscious).
 - Batch one is split 5/5/5 between preview-first, tease → reveal, and gift — see section 16. Cut the tease arm first if fifteen mockups is too many for a first weekend.

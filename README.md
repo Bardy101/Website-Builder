@@ -6,7 +6,7 @@ human approval gate before anything is printed.
 **This repo currently implements Phase 0: the prospect finder.** It stands
 alone, needs nothing else to exist, and permanently removes the job of
 trawling the internet for candidates. Phases 1–2 (letter copy, mockups, PDFs)
-are specified in [`BUILD-SPEC.md`](BUILD-SPEC.md) and not yet built.
+are specified in [`docs/postal-pipeline-build-spec.md`](docs/postal-pipeline-build-spec.md) and not yet built.
 
 ```
 discover  →  enrich  →  generate  →  preview  →  approve  →  print  →  post  →  track
@@ -81,16 +81,17 @@ Paths in the examples below use forward slashes; PowerShell accepts either.
 ============================================================
 
   1  Find prospects (one or several niches/towns)
-  2  Review a shortlist (cull to your 10-15)
-  3  Combine batches into one sheet (by niche or town)
-  4  Open a shortlist in your spreadsheet app
-  5  Tune the scoring from your decisions
-  6  Setup & configuration (keys, checks, tests)
+  2  Build a contact sheet (cull by eye, from screenshots)
+  3  Review a shortlist (cull to your 10-15)
+  4  Combine batches into one sheet (by niche or town)
+  5  Open a shortlist in your spreadsheet app
+  6  Tune the scoring from your decisions
+  7  Setup & configuration (keys, checks, tests)
   q  Quit
 ```
 
 The main menu is the daily workflow, in the order the work flows. Setup lives
-behind option **6**:
+behind option **7**:
 
 ```
   Setup & configuration
@@ -105,7 +106,7 @@ Everything the command-line flags do is asked as a question instead:
 **Find prospects** offers to add more niche/town pairs to the same run
 (merged and de-duplicated into one sheet — no config file to write), and asks
 whether to ignore the 30-day cache and re-fetch fresh data. Start with
-**6 → 1 Check setup** — it tells you which keys are set and what's missing.
+**7 → 1 Check setup** — it tells you which keys are set and what's missing.
 
 ### Repeating a search without paying again
 
@@ -419,39 +420,87 @@ later batch performs worse you can see what moved.
 | Signal | Score | Why |
 |---|---|---|
 | No website at all | +40 | Best lead: nothing to fix, only to build |
-| Facebook page / directory URL | +30 | Effectively no site |
-| Mobile score < 50 | +25 | Real, visible problem |
-| Mobile score 50–69 | +12 | Visibly middling — a dated site should outrank a flawless one |
-| No mobile viewport | +10 | Doesn't adapt to a phone at all |
+| Social-only presence (a Facebook page as the website) | +30 | Effectively no site |
+| No viewport meta tag | +25 | The best single tell for a pre-2013 build |
+| No media queries in CSS | +15 | Not responsive |
+| Copyright year 3+ years stale | +15 | Nobody has touched it |
+| Table-based layout | +15 | A 2000s build |
 | No HTTPS | +15 | Trust problem, easy to show |
-| ≥20 reviews and ≥4.3 rating | +15 | Established, cares about reputation |
+| Flash present | +10 | Rare, decisive when found |
+| ≥20 reviews and ≥4.0 rating | +15 | Established, cares about reputation |
 | < 5 reviews | −20 | Too new or too small |
+| Reviewed within 90 days | +5 | Still trading properly |
+| Squarespace / Framer / Webflow / Shopify | −15 | Someone pays for and maintains this |
 | Not OPERATIONAL | exclude | |
 | Chain / franchise name match | exclude | Head office decides, not the manager |
 
-The 50–69 band and the viewport signal are the v2 graded band: without them,
-mobile 51 scored identically to a flawless 95, and 49 → 51 swung a full 25
-points. A site can also be ugly-but-fast — PageSpeed can't see design — so
-your eye still overrules the score at the cull, and `tune.py` learns from it.
-Each business's `score_breakdown` in its `business.json` shows exactly which
-signals fired.
+**Mobile PageSpeed score does not score at all.** It measures page weight, not
+visual quality, and the two anti-correlate — good design costs bytes. The first
+live run ranked a genuinely good site top because it was heavy, and buried
+dated sparse ones because they were light. It survives as a reference column
+and as a tiebreaker between equal lead scores, sorted ascending.
 
 Exclusions are checked *before* any site check, so a chain never costs a
-PageSpeed call.
+PageSpeed call. Every staleness signal fails open: a fetch that times out
+scores nothing, because absent evidence is not evidence.
 
 **`site_verdict`** is the column you actually scan:
 
 | Verdict | Means |
 |---|---|
 | `none` | No website — the best lead |
-| `social_only` | A Facebook page or directory listing |
-| `poor` | Real site, but slow on mobile or no HTTPS |
-| `dated` | Middling score, or no mobile viewport |
-| `fine` | Genuinely good enough — a weak lead |
-| `unknown` | Couldn't be measured (checks skipped, or PageSpeed unavailable) — not judged either way |
+| `social_only` | A Facebook or Instagram page as the website |
+| `dated` | 2+ staleness signals |
+| `poor` | Exactly 1 staleness signal |
+| `fine` | No staleness signals — a weak lead |
+| `unknown` | The site couldn't be fetched, so nothing was established |
 
 Unknown is never silently rated `fine`. If a field can't be established it stays
 `null` — never guessed. A wrong owner name on a letter is worse than no name.
+
+---
+
+## The contact sheet — culling by eye
+
+Ranking and culling are different jobs: a score can order candidates, but it
+cannot tell you whether a website *looks* bad. That's the thing being sold
+against, and neither Places nor PageSpeed can see it.
+
+So every candidate's site is screenshotted (desktop 1440×900 and mobile
+390×844, above the fold) and rendered into one page:
+
+```bash
+./contactsheet.py --batch batches/2026-09-01_physios_hitchin
+```
+
+Or **menu option 2**. It writes `contactsheet.html` into the batch folder —
+a single file with the thumbnails base64-inlined, so it opens with no network
+and can be emailed to anyone.
+
+Each tile shows the screenshot, name, town, `lead_score`, `site_verdict` and
+`staleness_points`, with the live site linked. Click a thumbnail for the
+desktop shot. Keep or cull each one, pick a reason code for the culls, then
+**Export decisions** to download `decisions.json` and apply it:
+
+```bash
+./cull.py --batch <dir> --import decisions.json
+```
+
+Or menu option **3**, then "Apply decisions.json". Decisions persist in the
+browser's localStorage, so closing the sheet mid-cull loses nothing. Target:
+25 candidates culled in under five minutes.
+
+**Screenshots are cached by Place ID for 30 days**, so re-running a batch
+captures only genuinely new candidates. `--refresh-screenshots` forces
+recapture. A site that fails to load writes no file and gets an empty
+`screenshot_path`; the reason lands in `screenshot-failures.log`, and the
+failure never earns points.
+
+Screenshots need a browser once:
+
+```bash
+playwright install chromium
+```
 
 ---
 
@@ -474,7 +523,7 @@ searches appears once), and **re-scores everything with the current
 ./combine.py batches/2026-08-25_physiotherapist_hitchin batches/2026-08-26_physiotherapist_stevenage
 ```
 
-Or **menu option 3** — pick the batches by number, answer two filter
+Or **menu option 4** — pick the batches by number, answer two filter
 questions, done.
 
 - The niche filter matches by containment both ways, so `physio` matches a
@@ -658,7 +707,7 @@ batches/2026-09-01_physios_hitchin/
 ## Development
 
 ```bash
-python3 -m unittest discover -s tests -t .      # 226 tests, no network needed
+python3 -m unittest discover -s tests -t .      # 289 tests, no network needed
 ```
 
 Every network client takes an injectable transport, so the whole pipeline is

@@ -83,10 +83,18 @@ class TestDiscover(unittest.TestCase):
             weights=self.weights,
             top=25,
         )
-        new_leaf = next(b for b in result.businesses if b["name"] == "New Leaf Physio")
-        # +40 no website, -20 too few reviews
-        self.assertEqual(new_leaf["lead_score"], 20)
-        self.assertEqual(result.businesses[-1]["name"], "New Leaf Physio")
+        by_name = {b["name"]: b for b in result.businesses}
+        # +40 no website, -20 too few reviews, +5 reviewed recently
+        self.assertEqual(by_name["New Leaf Physio"]["lead_score"], 25)
+        # Still well below the established no-website practice.
+        self.assertGreater(
+            by_name["Bancroft Physio Rooms"]["lead_score"],
+            by_name["New Leaf Physio"]["lead_score"],
+        )
+        # And the site with nothing wrong with it now ranks last, which is
+        # the whole point of the visual-quality amendment.
+        self.assertEqual(
+            result.businesses[-1]["name"], "Hitchin Osteopathy & Physiotherapy")
 
     def test_top_limits_rows(self):
         result = discover(
@@ -127,8 +135,8 @@ class TestDiscover(unittest.TestCase):
         by_name = {b["name"]: b for b in result.businesses}
         fb = by_name["Walsworth Road Sports Injury Clinic"]
         self.assertEqual(fb["site_score"]["verdict"], "social_only")
-        # +30 social_only, +15 established
-        self.assertEqual(fb["lead_score"], 45)
+        # +30 social_only, +15 established, +5 reviewed recently
+        self.assertEqual(fb["lead_score"], 50)
         self.assertEqual(by_name["Bancroft Physio Rooms"]["site_score"]["verdict"], "none")
         # A real site we could not check gets no penalty — honest, not guessed.
         real = by_name["Hitchin Osteopathy & Physiotherapy"]
