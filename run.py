@@ -607,7 +607,8 @@ def action_combine() -> None:
     print("\nCombine batches into one re-ranked sheet")
     print("-" * 60)
     print("Costs nothing — it re-reads what's already on disk, de-duplicates")
-    print("by business, and re-scores with the current weights.\n")
+    print("by business, and re-scores with the current weights.")
+    print("Batches you have culled contribute their approved rows only.\n")
     for i, folder in enumerate(folders[:20], 1):
         combined = " (combined sheet)" if Batch(folder).read_meta().get("combined_from") else ""
         print(f"  {i}  {folder.name}{combined}")
@@ -635,9 +636,20 @@ def action_combine() -> None:
     from pipeline.combine import combine_batches, write_combined
     from pipeline.scoring import Weights
 
+    # Only worth asking when a cull would actually change the answer.
+    culled = [f for f in chosen if (Path(f) / "approved.csv").is_file()]
+    full = False
+    if culled:
+        print(f"\n{len(culled)} of {len(chosen)} selected batch(es) have been "
+              "culled.")
+        full = not ask_yes_no(
+            "Use the culled lists (approved rows only)?", True)
+
+    print("\nSources:")
     merged = combine_batches(
         [Batch(f) for f in chosen], niche=niche, town=town,
         weights=Weights.load(HERE / "weights.json"),
+        full=full, report=print,
     )
     if not merged:
         print("\nNothing matched that filter — check the spelling against the")

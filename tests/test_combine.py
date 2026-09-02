@@ -144,3 +144,100 @@ class TestCombine(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCombineRespectsTheCull(unittest.TestCase):
+    """A combined sheet must not resurrect what you rejected.
+
+    Before this, combine read the per-business JSON files, which a cull
+    never touches — so every rejected business came straight back.
+    """
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.weights = Weights.load(ROOT / "weights.json")
+
+        self.culled = Batch.create(self.tmp.name, niche="physiotherapist",
+                                   area="hitchin", name="c1")
+        for pid, name in (("P1", "Keep One"), ("P2", "Keep Two"),
+                          ("P3", "Cull Me")):
+            self.culled.write_business(
+                record(pid, name, "physiotherapist", "Hitchin"))
+
+        self.untouched = Batch.create(self.tmp.name, niche="physiotherapist",
+                                      area="stevenage", name="c2")
+        self.untouched.write_business(
+            record("P4", "Never Culled", "physiotherapist", "Stevenage"))
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def cull(self, batch, keep, reject):
+        """Write the artefacts a real cull leaves behind."""
+        from pipeline.storage import business_to_row, utcnow
+
+        batch.write_shortlist(
+            (business_to_row(batch.read_business(pid)) for pid in keep),
+            path=batch.approved_path,
+        )
+        for pid, reason in reject.items():
+            batch.append_rejection({
+                "place_id": pid,
+                "name": (batch.read_business(pid) or {}).get("name"),
+                "reason": reason,
+                "rejected_at": utcnow(),
+            })
+
+    def names(self, merged):
+        return sorted(b["name"] for b in merged)
+
+    def test_culled_batch_contributes_only_approved_rows(self):
+        self.cull(self.culled, keep=["P1", "P2"], reject={"P3": "site_fine"})
+        merged = combine_batches([self.culled], weights=self.weights)
+        self.assertEqual(self.names(merged), ["Keep One", "Keep Two"])
+
+    def test_uncalled_batch_still_contributes_everything(self):
+        merged = combine_batches([self.untouched], weights=self.weights)
+        self.assertEqual(self.names(merged), ["Never Culled"])
+
+    def test_full_ignores_the_cull(self):
+        self.cull(self.culled, keep=["P1"], reject={"P2": "gut", "P3": "site_fine"})
+        merged = combine_batches([self.culled], weights=self.weights, full=True)
+        self.assertEqual(self.names(merged), ["Cull Me", "Keep One", "Keep Two"])
+
+    def test_rejection_travels_across_batches(self):
+        # P3 rejected in the Hitchin batch, then found again by the
+        # Stevenage search whose radius overlaps. It must stay out.
+        self.cull(self.culled, keep=["P1", "P2"], reject={"P3": "site_fine"})
+        self.untouched.write_business(
+            record("P3", "Cull Me", "physiotherapist", "Stevenage"))
+        merged = combine_batches([self.culled, self.untouched],
+                                 weights=self.weights)
+        self.assertNotIn("Cull Me", self.names(merged))
+        self.assertEqual(self.names(merged),
+                         ["Keep One", "Keep Two", "Never Culled"])
+
+    def test_culled_to_nothing_contributes_nothing(self):
+        # An empty approved.csv is a decision, not a missing file.
+        self.cull(self.culled, keep=[],
+                  reject={"P1": "gut", "P2": "gut", "P3": "gut"})
+        merged = combine_batches([self.culled], weights=self.weights)
+        self.assertEqual(merged, [])
+
+    def test_report_says_which_list_each_source_used(self):
+        self.cull(self.culled, keep=["P1", "P2"], reject={"P3": "site_fine"})
+        lines = []
+        combine_batches([self.culled, self.untouched],
+                        weights=self.weights, report=lines.append)
+        self.assertEqual(len(lines), 2)
+        self.assertIn("approved.csv", lines[0])
+        self.assertIn("never culled", lines[1])
+
+    def test_report_names_cross_batch_drops(self):
+        self.cull(self.culled, keep=["P1", "P2"], reject={"P3": "site_fine"})
+        self.untouched.write_business(
+            record("P3", "Cull Me", "physiotherapist", "Stevenage"))
+        lines = []
+        combine_batches([self.culled, self.untouched],
+                        weights=self.weights, report=lines.append)
+        self.assertIn("dropped by a cull in another batch", lines[1])

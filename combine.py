@@ -5,6 +5,10 @@ Zero API calls: it reads batch folders already on disk. Records are
 de-duplicated by Place ID and re-scored with the current weights.json, so
 old batches pick up new scoring rules for free.
 
+Culls are respected: a batch you have culled contributes only its
+approved.csv rows, and a business rejected in any batch stays out of the
+merge. --full ignores the culls and merges the original shortlists.
+
     # all physios, every town you've searched
     ./combine.py --all --niche physio --name physios-all-towns
 
@@ -53,6 +57,12 @@ def parse_args(argv=None):
     p.add_argument("--name", help="output folder name (default: combined_<date>)")
     p.add_argument("--top", type=int, help="cap the combined sheet at N rows")
     p.add_argument("--weights", default="weights.json")
+    p.add_argument(
+        "--full",
+        action="store_true",
+        help="merge the original shortlists, ignoring every cull "
+             "(default: culled batches contribute only approved rows)",
+    )
     return p.parse_args(argv)
 
 
@@ -83,12 +93,15 @@ def main(argv=None) -> int:
             continue
         sources.append(batch)
 
+    print("\nSources:")
     merged = combine_batches(
         sources,
         niche=args.niche,
         town=args.town,
         weights=Weights.load(args.weights),
         top=args.top,
+        full=args.full,
+        report=print,
     )
     if not merged:
         raise SystemExit(

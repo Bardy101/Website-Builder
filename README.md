@@ -557,9 +557,12 @@ searches appears once), and **re-scores everything with the current
 
 # or name the folders explicitly
 ./combine.py batches/2026-08-25_physiotherapist_hitchin batches/2026-08-26_physiotherapist_stevenage
+
+# ignore the culls and merge the original shortlists
+./combine.py --all --niche physio --full
 ```
 
-Or **menu option 4** — pick the batches by number, answer two filter
+Or **menu option 4** — pick the batches by number, answer the filter
 questions, done.
 
 - The niche filter matches by containment both ways, so `physio` matches a
@@ -569,6 +572,15 @@ questions, done.
   Its records are copies, so it stands alone.
 - A combined sheet is never folded into a later `--all` — that would silently
   double the pool.
+- **Culls are respected.** A batch you have culled contributes its
+  `approved.csv` rows only, and a business you rejected in *any* batch stays
+  out of the merge — a rejection is a judgement about the business, and
+  overlapping search radii would otherwise hand it back through the
+  neighbouring town. Batches never culled contribute their whole shortlist.
+  Every source prints which list it used, so the choice is never silent.
+- `--full` ignores the culls and merges the original shortlists — use it when
+  you want to re-cull a wider pool under changed weights. The menu asks
+  instead of taking a flag, and only when a selected batch has been culled.
 
 One thing combining can't do: conjure businesses the original searches never
 kept. Each source batch holds its own top rows only, so if you plan to slice
