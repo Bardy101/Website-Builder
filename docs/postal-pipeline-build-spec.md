@@ -194,6 +194,33 @@ One Claude API call per business, with a fixed system prompt and the business re
 
 ### The substrate decision (read this before building anything)
 
+> **Amendment — delivery substrate. DECIDED 2026-09-02.** Everything below
+> chose a substrate for the *preview* and left the delivered site's platform
+> unstated. That put this section in conflict with `package-definition.md`,
+> whose clause 6 and Essentials handover both assume a managed platform the
+> client edits themselves. The operator's constraint is that **the mockup must
+> match the live product**, so preview and delivery cannot sit on different
+> substrates.
+>
+> **Chosen: Webflow, exported to HTML.** Design once in Webflow; export the
+> static markup and variable-ise that for tier 1 and tier 2; deliver the
+> client's live site on Webflow with editor access. One design serves both
+> ends, so the mockup is the live product's own markup rather than a
+> lookalike. Framer stays rejected for exactly the reason given in the table
+> below — no code export — and Webflow is the only managed platform that
+> avoids it. Bought HTML/Tailwind templates remain useful as design
+> references and for learning the field list, but the pipeline's source of
+> truth becomes the Webflow export.
+>
+> **Unverified — check before committing spend:** which Webflow plan tier
+> includes code export, and whether client editor access sits on that same
+> tier. If export turns out to be uneconomic at the £495 Essentials price,
+> the fallback is static HTML delivered and hosted by you, with client
+> self-editing dropped and an edit allowance folded into Site Care instead.
+> That is a different product: it would require clauses 5, 6 and 8 and the
+> Essentials handover in `package-definition.md` to be rewritten, not just
+> narrowed.
+
 **Premium feel does not come from the builder. It comes from the template.** No AI generator supplies taste you don't have — they reliably produce competent, generic layouts, which is the one thing that kills the premise of the letter. A bought, professionally designed template supplies the typography, spacing and colour decisions a designer already made; your job reduces to filling it in well, which is a job you can do.
 
 **Buy two or three premium HTML/Tailwind templates.** Roughly £30–80 each from the usual marketplaces, or a Tailwind component library. Pick them by target shape, not by industry label: a clinic/practice layout and a professional-services layout between them cover physios, accountants and conveyancers. You own the files.
@@ -206,7 +233,8 @@ Critically, the same files serve tier 1 and tier 2 — hand-edited for batch one
 |---|---|
 | **Lovable** | Wrong category. It builds full-stack React apps with auth and a database; you need a brochure page. Output is functional but not design-optimised, and it produces generic layouts needing manual polish. |
 | **Framer** | Genuinely premium output and fast — but **no code export and locked hosting**. Fine for hand-building ten mockups, fatal at tier 2, because template-fill depends on a script injecting fields and publishing. Build a Framer workflow now and you throw it away in six weeks. |
-| **Bought HTML/Tailwind templates** | **Chosen.** Premium by default, fully scriptable, you own the files, publishes anywhere for pennies. |
+| **Bought HTML/Tailwind templates** | **Superseded — see the amendment above.** Premium by default, fully scriptable, you own the files, publishes anywhere for pennies — but delivering raw HTML breaks the client self-editing the package is sold on. Kept as a design reference and as the fallback if Webflow's export tier proves uneconomic. |
+| **Webflow** | **Chosen.** The only managed platform that exports clean static HTML *and* lets the client edit the live site, so one design serves both the scripted preview and the delivered product. Costs a plan tier; verify code export is on it. |
 
 Two things that do more for perceived quality than any tool choice: **real photography** (Places photos are frequently poor — budget a few decent stock shots per niche) and **restraint** (generous whitespace, two fonts maximum, one accent colour lifted from their existing branding). Amateur sites look amateur because they're crowded, not because the components are bad.
 
@@ -377,7 +405,10 @@ Roughly one evening to phase 0, three more to first batch, another three or four
 ## 15. Open decisions
 
 - Preview host: S3/CloudFront vs Cloudflare Pages.
-- Which template marketplace, and whether the licence covers multi-client use.
+- Webflow plan tier: which one includes code export, and whether client
+  editor access is on the same tier (see the amendment in section 7).
+- Which template marketplace for design reference, and whether any bought
+  template's licence covers multi-client use.
 - Short-URL domain: buy a short one or use a path on your main domain.
 - First niche for batch one (recommendation: physios or accountants — static content, mostly ltd companies, review-conscious).
 - Batch one is split 5/5/5 between preview-first, tease → reveal, and gift — see section 16. Cut the tease arm first if fifteen mockups is too many for a first weekend.

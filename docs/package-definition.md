@@ -77,7 +77,7 @@ For established businesses replacing an outdated site.
 3. **One revision round means one consolidated list.** Client gathers all changes into a single reply. Piecemeal changes across multiple messages count against the same round. Further rounds at the add-on rate.
 4. **Approval deadline:** if no feedback is received within 14 days of the draft being shared, the draft is deemed approved and the final invoice is issued. (Prevents half-finished projects hanging over you for months.)
 5. **Ownership:** the client owns their domain, their platform account, and their content. You retain the right to display the work in your portfolio.
-6. **Platform fees** (Framer/Webflow/Squarespace hosting, ~£10–20/month) are paid by the client directly to the platform on the client's own card.
+6. **Platform fees** (Webflow hosting, ~£10–20/month at current site-plan rates) are paid by the client directly to the platform on the client's own card. *Webflow specifically: the mockup you were sent is exported from the same design the live site is built from, which is why what you saw is what you get.*
 7. **Copy approval is final.** Post-approval rewrites are chargeable edits.
 8. **Support boundary:** the package includes the handover video and 30 days of email support for defects (things not working as delivered). It does not include changes, additions, training calls, or support for email, printers, or anything beyond the website itself.
 9. **Compliance note:** sites are built with good practice for speed, mobile and accessibility, but no certification of WCAG or GDPR compliance is given; clients remain responsible for their own legal pages and business compliance. (A privacy policy page placeholder is included.)

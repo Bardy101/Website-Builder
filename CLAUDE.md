@@ -80,8 +80,11 @@ Current task section is the main way this repo becomes confusing.
     remain argparse-first and scriptable as the conventions require; the menu
     only drives them.
 - **Phase 1 — letter generation and batch one:** not started.
-- **Phase 2 — template-fill previews (tier 2):** not started. Blocked on
-  premium HTML/Tailwind templates being purchased.
+- **Phase 2 — template-fill previews (tier 2):** not started. Blocked on the
+  delivery substrate: Webflow was chosen 2026-09-02 (mockup must match the
+  live product), so tier 1 and tier 2 fill a Webflow HTML export rather than
+  a bought template. See the amendment in section 7 of the spec. Still to
+  confirm which Webflow plan tier carries code export.
 
 ## Conventions
 
