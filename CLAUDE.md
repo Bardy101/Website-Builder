@@ -81,8 +81,8 @@ Current task section is the main way this repo becomes confusing.
     only drives them.
 - **Phase 1 — letter generation and batch one:** not started.
 - **Phase 2 — template-fill previews (tier 2):** not started. Delivery
-  substrate settled 2026-09-02: Webflow on the **Freelancer** Workspace
-  tier (the floor for code export), so tier 1 and tier 2 fill a Webflow
+  substrate settled 2026-09-02: Webflow on the **Core** Workspace tier
+  ($28/mo, the floor for code export), so tier 1 and tier 2 fill a Webflow
   HTML export rather than a bought template — the mockup must match the
   live product. Master designs are built **without CMS Collections**, or
   the export stops matching the live site. One master per layout shape,

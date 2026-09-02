@@ -212,19 +212,32 @@ One Claude API call per business, with a fixed system prompt and the business re
 > references and for learning the field list, but the pipeline's source of
 > truth becomes the Webflow export.
 >
-> **Plan tier — resolved 2026-09-02.** Code export is a **Freelancer**
-> Workspace feature (Starter does not have it), so Freelancer is the floor.
-> It also carries the two other things this model needs: free guest access
-> in client Workspaces, which is how clause 5's "the client owns their
-> platform account" stays true without you carrying their hosting, and one
-> Shared Library for the design system. Agency buys site-level roles and
-> unlimited staging — neither matters solo.
+> **Plan tier — resolved 2026-09-02.** Webflow's Workspace tiers are
+> Starter (free) / **Core ($28/mo billed monthly, cheaper annually)** /
+> Growth ($60) / Enterprise. Code export is absent on Starter and appears at
+> **Core**, so Core is the floor. Core also carries the two other things this
+> model needs: ten staging sites and one Shared Library for the design
+> system. Growth buys unlimited staging, site-level roles and publishing
+> permissions — none of which matter solo.
+>
+> At roughly £265/year against £495 per site, the first client each year
+> covers the subscription. It is an operating cost on the operator, not
+> something clause 6 passes to the client.
 >
 > Note the two-cost structure: the Workspace plan is yours (designing), the
 > Site plan is the client's (hosting on their domain). The Workspace tiers
-> do not include a custom domain launch at any level.
+> do not include a custom domain launch at any level. Client *count* is never
+> capped by the Workspace tier — "unlimited paid hosting sites" is on every
+> tier including the free one — so the only per-site cost is the client's own
+> Site plan.
 >
-> **Freelancer's 10 staging sites are not a cap on batch size.** There is no
+> Guest access is listed on every tier, free included, which confirms the
+> delivery model from the other side: a client on the free tier can still
+> invite you into their Workspace as a guest. They buy their Site plan, you
+> build in their account, they own it — which is how clause 5's "the client
+> owns their platform account" stays true without you carrying their hosting.
+>
+> **Core's 10 staging sites are not a cap on batch size.** There is no
 > Webflow site per prospect: you build one master design per layout shape —
 > clinic, professional, trades, generic — export each once, and the pipeline
 > generates per-prospect previews as static files on your own host. Four of
@@ -436,7 +449,7 @@ Roughly one evening to phase 0, three more to first batch, another three or four
 ## 15. Open decisions
 
 - Preview host: S3/CloudFront vs Cloudflare Pages.
-- ~~Webflow plan tier for code export~~ — resolved: Freelancer. Remaining
+- ~~Webflow plan tier for code export~~ — resolved: Core, $28/mo. Remaining
   unknown is how the client edits their live site after handover (see the
   amendment in section 7).
 - Which template marketplace for design reference, and whether any bought
