@@ -212,14 +212,45 @@ One Claude API call per business, with a fixed system prompt and the business re
 > references and for learning the field list, but the pipeline's source of
 > truth becomes the Webflow export.
 >
-> **Unverified — check before committing spend:** which Webflow plan tier
-> includes code export, and whether client editor access sits on that same
-> tier. If export turns out to be uneconomic at the £495 Essentials price,
-> the fallback is static HTML delivered and hosted by you, with client
-> self-editing dropped and an edit allowance folded into Site Care instead.
-> That is a different product: it would require clauses 5, 6 and 8 and the
-> Essentials handover in `package-definition.md` to be rewritten, not just
-> narrowed.
+> **Plan tier — resolved 2026-09-02.** Code export is a **Freelancer**
+> Workspace feature (Starter does not have it), so Freelancer is the floor.
+> It also carries the two other things this model needs: free guest access
+> in client Workspaces, which is how clause 5's "the client owns their
+> platform account" stays true without you carrying their hosting, and one
+> Shared Library for the design system. Agency buys site-level roles and
+> unlimited staging — neither matters solo.
+>
+> Note the two-cost structure: the Workspace plan is yours (designing), the
+> Site plan is the client's (hosting on their domain). The Workspace tiers
+> do not include a custom domain launch at any level.
+>
+> **Freelancer's 10 staging sites are not a cap on batch size.** There is no
+> Webflow site per prospect: you build one master design per layout shape —
+> clinic, professional, trades, generic — export each once, and the pipeline
+> generates per-prospect previews as static files on your own host. Four of
+> ten used. This is the property Framer could not offer.
+>
+> **Design rule that follows: build the templates with no CMS Collections.**
+> Webflow's export emits HTML/CSS/JS but not Collection-driven content, so a
+> Collection-backed design would export as something that no longer matches
+> the live site — breaking the constraint this whole decision exists to
+> satisfy. Keeping the templates static also means the client needs only the
+> cheapest Site plan, which is what keeps clause 6's "~£10–20/month" honest.
+>
+> **Still unverified:** how the client edits their live site after handover.
+> The Workspace table does not cover it, and Webflow retired its standalone
+> Editor. The implied model is that the client holds their own free Starter
+> Workspace plus a paid Site plan and edits there, with you joining as a free
+> guest. Confirm before promising the Essentials handover video, because the
+> package's support boundary rests on it. If client editing turns out to need
+> a paid seat in *your* Workspace, the per-client cost changes and the
+> fallback below applies.
+>
+> **Fallback if the economics break:** static HTML delivered and hosted by
+> you, with client self-editing dropped and an edit allowance folded into
+> Site Care instead. That is a different product — it would require clauses
+> 5, 6 and 8 and the Essentials handover in `package-definition.md` to be
+> rewritten, not just narrowed.
 
 **Premium feel does not come from the builder. It comes from the template.** No AI generator supplies taste you don't have — they reliably produce competent, generic layouts, which is the one thing that kills the premise of the letter. A bought, professionally designed template supplies the typography, spacing and colour decisions a designer already made; your job reduces to filling it in well, which is a job you can do.
 
@@ -405,8 +436,9 @@ Roughly one evening to phase 0, three more to first batch, another three or four
 ## 15. Open decisions
 
 - Preview host: S3/CloudFront vs Cloudflare Pages.
-- Webflow plan tier: which one includes code export, and whether client
-  editor access is on the same tier (see the amendment in section 7).
+- ~~Webflow plan tier for code export~~ — resolved: Freelancer. Remaining
+  unknown is how the client edits their live site after handover (see the
+  amendment in section 7).
 - Which template marketplace for design reference, and whether any bought
   template's licence covers multi-client use.
 - Short-URL domain: buy a short one or use a path on your main domain.

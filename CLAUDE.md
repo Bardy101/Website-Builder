@@ -80,11 +80,14 @@ Current task section is the main way this repo becomes confusing.
     remain argparse-first and scriptable as the conventions require; the menu
     only drives them.
 - **Phase 1 — letter generation and batch one:** not started.
-- **Phase 2 — template-fill previews (tier 2):** not started. Blocked on the
-  delivery substrate: Webflow was chosen 2026-09-02 (mockup must match the
-  live product), so tier 1 and tier 2 fill a Webflow HTML export rather than
-  a bought template. See the amendment in section 7 of the spec. Still to
-  confirm which Webflow plan tier carries code export.
+- **Phase 2 — template-fill previews (tier 2):** not started. Delivery
+  substrate settled 2026-09-02: Webflow on the **Freelancer** Workspace
+  tier (the floor for code export), so tier 1 and tier 2 fill a Webflow
+  HTML export rather than a bought template — the mockup must match the
+  live product. Master designs are built **without CMS Collections**, or
+  the export stops matching the live site. One master per layout shape,
+  not one Webflow site per prospect. See the amendment in section 7 of the
+  spec; the one open question there is how clients edit after handover.
 
 ## Conventions
 
