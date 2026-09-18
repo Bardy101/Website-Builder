@@ -12,6 +12,7 @@ stage can be exercised offline against a fixture.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Callable, Iterable, Optional
 
 from .addressee import decide as decide_addressee
@@ -113,8 +114,11 @@ def discover(
         pre = score_business(business, weights)
         if pre.excluded:
             business["excluded"] = pre.exclude_reason
+            business["excluded_detail"] = pre.exclude_detail
             excluded.append(business)
-            say(f"  excluded ({pre.exclude_reason}): {business.get('name')}")
+            why = pre.exclude_reason + (
+                f", {pre.exclude_detail}" if pre.exclude_detail else "")
+            say(f"  excluded ({why}): {business.get('name')}")
             continue
 
         # Baseline verdict from the URL alone — pure, no network, so it holds
@@ -172,7 +176,11 @@ def discover(
         result = score_business(business, weights)
         if result.excluded:
             business["excluded"] = result.exclude_reason
+            business["excluded_detail"] = result.exclude_detail
             excluded.append(business)
+            why = result.exclude_reason + (
+                f", {result.exclude_detail}" if result.exclude_detail else "")
+            say(f"  excluded ({why}): {business.get('name')}")
             continue
         business["lead_score"] = result.score
         business["score_breakdown"] = result.breakdown
@@ -272,11 +280,61 @@ def merge_results(results: Iterable[DiscoverResult]) -> DiscoverResult:
     )
 
 
+EXCLUDED_COLUMNS = [
+    "name", "reason", "detail", "last_review", "review_count",
+    "site_verdict", "website", "town", "place_id",
+]
+
+
+def excluded_to_row(business: dict) -> dict:
+    """One line per excluded business: enough to see why, no more.
+
+    Search stubs screened before details carry only a name and a reason;
+    fully fetched records carry the lot. Blank means unknown, as elsewhere.
+    """
+    from .places import most_recent_review_date
+
+    site = business.get("site_score") or {}
+    address = business.get("address") or {}
+    return {
+        "name": business.get("name") or "",
+        "reason": business.get("excluded") or "",
+        "detail": business.get("excluded_detail") or "",
+        "last_review": most_recent_review_date(business) or "",
+        "review_count": (
+            "" if business.get("review_count") is None
+            else business["review_count"]
+        ),
+        "site_verdict": site.get("verdict") or "",
+        "website": business.get("website") or "",
+        "town": address.get("town") or "",
+        "place_id": business.get("place_id") or "",
+    }
+
+
+def write_excluded(batch: Batch, excluded: list[dict]) -> Optional[Path]:
+    """Write excluded.csv beside the shortlist. Nothing excluded, no file."""
+    import csv
+
+    if not excluded:
+        return None
+    path = batch.excluded_path
+    with path.open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=EXCLUDED_COLUMNS)
+        writer.writeheader()
+        for business in excluded:
+            writer.writerow(excluded_to_row(business))
+    return path
+
+
 def write_batch(batch: Batch, result: DiscoverResult) -> None:
     """Persist a discover result into a batch folder."""
     for business in result.businesses:
         batch.write_business(business)
     batch.write_shortlist(result.rows)
+    # The exclusions are the answer to "where did X go?" — a question that
+    # gets asked every time the rules tighten, so the list lives on disk.
+    write_excluded(batch, result.excluded)
     meta = batch.read_meta()
     meta["status_counts"] = {
         "shortlisted": len(result.businesses),

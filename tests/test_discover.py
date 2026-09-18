@@ -198,3 +198,74 @@ class TestMerge(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestExcludedList(unittest.TestCase):
+    """Every exclusion is written down — the rules tightening must never
+    make a business vanish without a trace."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.places = FixturePlacesClient.from_file(FIXTURE)
+        self.weights = Weights.load(
+            Path(__file__).resolve().parent.parent / "weights.json")
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    # The one real site in the fixture, rated clean so it trips site_fine.
+    FINE_SITE = "https://hitchin-osteo-physio.co.uk"
+
+    def run_discover(self, weights):
+        return discover(
+            niche="physiotherapist", area="Hitchin",
+            places_client=self.places,
+            site_checker=StubChecker({self.FINE_SITE: 90}),
+            weights=weights, top=25,
+        )
+
+    def test_excluded_csv_written_with_reason_and_detail(self):
+        import csv
+
+        result = self.run_discover(self.weights)
+        self.assertTrue(result.excluded, "fixture should trip at least one rule")
+        batch = Batch.create(self.tmp.name, niche="physiotherapist", area="Hitchin")
+        write_batch(batch, result)
+        self.assertTrue(batch.excluded_path.is_file())
+        with batch.excluded_path.open(encoding="utf-8") as fh:
+            rows = list(csv.DictReader(fh))
+        self.assertEqual(len(rows), len(result.excluded))
+        for row in rows:
+            self.assertTrue(row["name"])
+            self.assertTrue(row["reason"])
+            self.assertTrue(row["place_id"])
+        by_reason = {row["reason"]: row for row in rows}
+        # A chain screened before details, a closed business, and the one
+        # real site rated clean — each with the detail a human would want.
+        self.assertIn("chain_or_franchise", by_reason)
+        self.assertIn("non_operational", by_reason)
+        self.assertIn("site_fine", by_reason)
+        fine = by_reason["site_fine"]
+        self.assertEqual(fine["website"], self.FINE_SITE)
+        self.assertEqual(fine["site_verdict"], "fine")
+        self.assertEqual(fine["detail"], "no staleness signals")
+
+    def test_no_exclusions_no_file(self):
+        batch = Batch.create(self.tmp.name, niche="x", area="y")
+        from pipeline.discover import DiscoverResult
+
+        write_batch(batch, DiscoverResult(rows=[], businesses=[], excluded=[]))
+        self.assertFalse(batch.excluded_path.is_file())
+
+    def test_keeping_fine_sites_restores_them(self):
+        loose = Weights.load(
+            Path(__file__).resolve().parent.parent / "weights.json")
+        loose.exclude["site_fine"] = False
+        strict = self.run_discover(self.weights)
+        loosened = self.run_discover(loose)
+        fine_now_kept = [
+            b for b in loosened.businesses
+            if (b.get("site_score") or {}).get("verdict") == "fine"
+        ]
+        self.assertTrue(fine_now_kept)
+        self.assertGreater(len(loosened.businesses), len(strict.businesses))

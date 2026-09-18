@@ -104,6 +104,23 @@ def parse_args(argv=None):
         action="store_true",
         help="ignore the cache and re-fetch everything (costs real API calls)",
     )
+    p.add_argument(
+        "--keep-dormant",
+        action="store_true",
+        help="keep businesses with no review in the past year (weights.json "
+             "excludes them by default)",
+    )
+    p.add_argument(
+        "--keep-fine",
+        action="store_true",
+        help="keep businesses whose site measured clean on every staleness "
+             "check (excluded by default — nothing to sell them)",
+    )
+    p.add_argument(
+        "--dormant-days", type=int, metavar="N",
+        help="treat a business as dormant after N days without a review "
+             "(default from weights.json: 365)",
+    )
     p.add_argument("--quiet", action="store_true")
     # Set by run.py so the closing hint points at the menu, not a command line.
     p.add_argument("--from-menu", action="store_true", help=argparse.SUPPRESS)
@@ -163,6 +180,14 @@ def main(argv=None) -> int:
 
     config = Config.from_env()
     weights = Weights.load(args.weights)
+    # One-run overrides of the selection rules, so loosening the list for a
+    # look does not mean editing weights.json and remembering to put it back.
+    if args.keep_dormant:
+        weights.exclude["dormant"] = False
+    if args.keep_fine:
+        weights.exclude["site_fine"] = False
+    if args.dormant_days:
+        weights.thresholds["dormant_after_days"] = args.dormant_days
     places, checker, ch, contacts, shots = build_clients(args, config)
     say = (lambda _m: None) if args.quiet else (lambda m: print(m, flush=True))
 
@@ -247,6 +272,14 @@ def main(argv=None) -> int:
     say("")
     say(f"Shortlist:  {batch.shortlist_path}")
     say(f"Businesses: {len(result.businesses)} kept, {len(result.excluded)} excluded")
+    if result.excluded:
+        reasons: dict[str, int] = {}
+        for b in result.excluded:
+            code = b.get("excluded") or "unknown"
+            reasons[code] = reasons.get(code, 0) + 1
+        summary = ", ".join(f"{n} {code}" for code, n in
+                            sorted(reasons.items(), key=lambda kv: -kv[1]))
+        say(f"Excluded:   {batch.excluded_path.name}  ({summary})")
     if result.rows:
         say("")
         say("Top of the list:")
@@ -263,8 +296,9 @@ def main(argv=None) -> int:
         say("  - Is the town spelled as Google knows it? '\"Hitchin, Hertfordshire\"'")
         say("    is safer than 'Hitchin'.")
         if result.excluded:
-            say(f"  - {len(result.excluded)} were found but excluded "
-                "(chain or not operational).")
+            say(f"  - {len(result.excluded)} were found but excluded — see "
+                f"{batch.excluded_path.name} for each one's reason. To loosen")
+            say("    the rules for a look: --keep-dormant, --keep-fine.")
         return 1
 
     needs_human = [

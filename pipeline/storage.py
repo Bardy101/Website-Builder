@@ -117,6 +117,10 @@ class Batch:
     def rejections_path(self) -> Path:
         return self.path / "rejections.jsonl"
 
+    @property
+    def excluded_path(self) -> Path:
+        return self.path / "excluded.csv"
+
     def business_dir(self, place_id: str) -> Path:
         return self.path / place_id
 

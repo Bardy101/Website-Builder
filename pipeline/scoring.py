@@ -78,8 +78,14 @@ class Weights:
                 "too_few_reviews_max": 5,
                 "recent_review_days": 90,
                 "copyright_stale_years": 3,
+                "dormant_after_days": 365,
             },
-            exclude={"non_operational": True, "chain_or_franchise": True},
+            exclude={
+                "non_operational": True,
+                "chain_or_franchise": True,
+                "dormant": True,
+                "site_fine": True,
+            },
             chain_names=[],
         )
 
@@ -90,6 +96,8 @@ class ScoreResult:
     excluded: bool
     exclude_reason: Optional[str]
     breakdown: dict
+    # Human detail behind the reason code, e.g. "last review 2024-03-01".
+    exclude_detail: Optional[str] = None
 
 
 def _normalise(name: str) -> str:
@@ -104,6 +112,40 @@ def looks_like_chain(name: str, chain_names: list[str]) -> bool:
         if needle and needle in haystack:
             return True
     return False
+
+
+def dormancy(business: dict[str, Any], within_days: int) -> Optional[str]:
+    """Why this business looks dormant, or None if it doesn't — or can't be told.
+
+    A dormant listing is one with no review inside ``within_days``. The
+    evidence has to be positive in both directions:
+
+    - ``review_count`` absent means the details were never fetched (a search
+      stub). No evidence, no verdict.
+    - ``review_count`` of zero is real evidence: the listing has no reviews.
+    - A positive count with no dated reviews returned is incomplete evidence
+      (Places hands back at most five, by relevance, not recency), so it
+      fails open rather than excluding a business that may well be trading.
+    """
+    from datetime import datetime, timezone
+
+    from .places import most_recent_review_date
+
+    count = business.get("review_count")
+    if count is None:
+        return None
+    if count == 0:
+        return "no reviews"
+    latest = most_recent_review_date(business)
+    if not latest:
+        return None
+    try:
+        when = datetime.strptime(latest, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    except ValueError:
+        return None
+    if (datetime.now(timezone.utc) - when).days > within_days:
+        return f"last review {latest}"
+    return None
 
 
 def score_business(business: dict[str, Any], weights: Weights) -> ScoreResult:
@@ -126,8 +168,22 @@ def score_business(business: dict[str, Any], weights: Weights) -> ScoreResult:
     ):
         return ScoreResult(0, True, "chain_or_franchise", breakdown)
 
+    # A listing nobody has reviewed in a year is far more often a closed or
+    # moved business, or a registered-office address, than a live prospect.
+    # Only fires once details are in hand — see dormancy() for the evidence
+    # rules — so the search-stub screen never trips it.
+    if weights.exclude.get("dormant", False):
+        why = dormancy(business, thr.get("dormant_after_days", 365))
+        if why:
+            return ScoreResult(0, True, "dormant", breakdown, why)
+
     site = business.get("site_score") or {}
     verdict = site.get("verdict") or ("none" if not business.get("website") else None)
+
+    # Nothing to sell to a business whose site measured clean on every
+    # staleness check. "unknown" (the fetch failed) is not "fine" and stays.
+    if weights.exclude.get("site_fine", False) and verdict == "fine":
+        return ScoreResult(0, True, "site_fine", breakdown, "no staleness signals")
 
     if verdict == "none":
         breakdown["no_website"] = sig.get("no_website", 40)

@@ -21,11 +21,14 @@
     "established_min_rating": 4.0,
     "too_few_reviews_max": 5,
     "recent_review_days": 90,
-    "copyright_stale_years": 3
+    "copyright_stale_years": 3,
+    "dormant_after_days": 365
   },
   "exclude": {
     "non_operational": true,
-    "chain_or_franchise": true
+    "chain_or_franchise": true,
+    "dormant": true,
+    "site_fine": true
   },
   "chain_names": [
     "nuffield health",

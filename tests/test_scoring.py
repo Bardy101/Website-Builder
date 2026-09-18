@@ -69,6 +69,9 @@ class TestScoring(unittest.TestCase):
                        "uses_table_layout": False, "has_flash": False,
                        "platform_hint": None},
         )
+        # This checks the arithmetic of a clean site, not the filter that
+        # drops clean sites from the list — so the filter is switched off.
+        self.w.exclude["site_fine"] = False
         result = score_business(b, self.w)
         self.assertEqual(result.score, 15)
 
@@ -308,6 +311,95 @@ class TestBriefAcceptanceCriterion1(unittest.TestCase):
         fastest = max(ranked, key=lambda b: b["site_score"]["mobile_score"])
         self.assertEqual(fastest["name"], "Table layout, no https")
         self.assertEqual(ranked[0]["name"], fastest["name"])
+
+
+class TestSelectivity(unittest.TestCase):
+    """The two exclusions added once live runs showed the top of the list
+    filling with dormant listings and sites with nothing wrong with them."""
+
+    def setUp(self):
+        self.w = Weights.default()
+
+    @staticmethod
+    def days_ago(n):
+        from datetime import datetime, timedelta, timezone
+
+        return (datetime.now(timezone.utc) - timedelta(days=n)).strftime(
+            "%Y-%m-%dT00:00:00Z")
+
+    def test_no_reviews_at_all_is_dormant(self):
+        result = score_business(business(review_count=0, reviews=[]), self.w)
+        self.assertTrue(result.excluded)
+        self.assertEqual(result.exclude_reason, "dormant")
+        self.assertEqual(result.exclude_detail, "no reviews")
+
+    def test_last_review_over_a_year_ago_is_dormant(self):
+        b = business(review_count=40, reviews=[{"time": self.days_ago(400)}])
+        result = score_business(b, self.w)
+        self.assertTrue(result.excluded)
+        self.assertEqual(result.exclude_reason, "dormant")
+        self.assertTrue(result.exclude_detail.startswith("last review "))
+
+    def test_recent_review_is_not_dormant(self):
+        b = business(review_count=40, reviews=[{"time": self.days_ago(30)}])
+        result = score_business(b, self.w)
+        self.assertFalse(result.excluded)
+
+    def test_search_stub_without_details_is_never_dormant(self):
+        # The pre-details screen scores {name, business_status} only. No
+        # review_count means no evidence, and no evidence means no verdict.
+        result = score_business(
+            {"name": "Stub Physio", "business_status": "OPERATIONAL"}, self.w)
+        self.assertFalse(result.excluded)
+
+    def test_reviews_exist_but_none_returned_fails_open(self):
+        # Places returns at most five reviews, by relevance. A count with no
+        # dated reviews is incomplete evidence, not evidence of dormancy.
+        b = business(review_count=25, reviews=[])
+        self.assertFalse(score_business(b, self.w).excluded)
+
+    def test_dormancy_window_is_configurable(self):
+        self.w.thresholds["dormant_after_days"] = 60
+        b = business(review_count=40, reviews=[{"time": self.days_ago(90)}])
+        self.assertTrue(score_business(b, self.w).excluded)
+        self.w.thresholds["dormant_after_days"] = 120
+        self.assertFalse(score_business(b, self.w).excluded)
+
+    def test_dormancy_can_be_switched_off(self):
+        self.w.exclude["dormant"] = False
+        result = score_business(business(review_count=0, reviews=[]), self.w)
+        self.assertFalse(result.excluded)
+        self.assertEqual(result.breakdown["too_few_reviews"], -20)
+
+    def test_fine_site_is_excluded(self):
+        b = business(website="https://example.co.uk",
+                     site_score={"verdict": "fine"},
+                     reviews=[{"time": self.days_ago(10)}])
+        result = score_business(b, self.w)
+        self.assertTrue(result.excluded)
+        self.assertEqual(result.exclude_reason, "site_fine")
+
+    def test_unknown_verdict_is_not_fine(self):
+        # A failed fetch says nothing about the site. It stays in the list.
+        b = business(website="https://example.co.uk",
+                     site_score={"verdict": "unknown"},
+                     reviews=[{"time": self.days_ago(10)}])
+        self.assertFalse(score_business(b, self.w).excluded)
+
+    def test_dated_site_stays(self):
+        b = business(website="https://example.co.uk",
+                     site_score={"verdict": "dated"},
+                     staleness={"has_viewport": False, "has_media_queries": False},
+                     reviews=[{"time": self.days_ago(10)}])
+        result = score_business(b, self.w)
+        self.assertFalse(result.excluded)
+        self.assertGreater(result.score, 0)
+
+    def test_weights_json_on_disk_enables_both(self):
+        w = Weights.load(Path(__file__).resolve().parent.parent / "weights.json")
+        self.assertTrue(w.exclude.get("dormant"))
+        self.assertTrue(w.exclude.get("site_fine"))
+        self.assertEqual(w.thresholds.get("dormant_after_days"), 365)
 
 
 if __name__ == "__main__":

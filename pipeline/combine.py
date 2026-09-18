@@ -103,6 +103,7 @@ def combine_batches(
         approved = None if full else approved_ids(batch)
         kept = 0
         dropped_elsewhere = 0
+        excluded_now = 0
         for business in batch.iter_businesses():
             place_id = business.get("place_id")
             if not place_id:
@@ -121,6 +122,9 @@ def combine_batches(
                 continue
             result = score_business(business, weights)
             if result.excluded:
+                # The rules may have tightened since this batch was found;
+                # a row vanishing here is reported, never silent.
+                excluded_now += 1
                 continue
             record = dict(business)
             record["lead_score"] = result.score
@@ -146,6 +150,8 @@ def combine_batches(
 
         extra = (f", {dropped_elsewhere} dropped by a cull in another batch"
                  if dropped_elsewhere else "")
+        if excluded_now:
+            extra += f", {excluded_now} excluded under the current rules"
         if full:
             say(f"  {batch.path.name}: {kept} row(s) — cull ignored")
         elif approved is None:

@@ -241,3 +241,35 @@ class TestCombineRespectsTheCull(unittest.TestCase):
         combine_batches([self.culled, self.untouched],
                         weights=self.weights, report=lines.append)
         self.assertIn("dropped by a cull in another batch", lines[1])
+
+
+class TestCombineReportsCurrentRules(unittest.TestCase):
+    """Old batches re-scored under tighter rules lose rows — and say so."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.weights = Weights.load(ROOT / "weights.json")
+        self.batch = Batch.create(self.tmp.name, niche="physiotherapist",
+                                  area="hitchin", name="old")
+        from datetime import datetime, timedelta, timezone
+
+        def ago(n):
+            return (datetime.now(timezone.utc) - timedelta(days=n)).strftime(
+                "%Y-%m-%dT00:00:00Z")
+
+        self.batch.write_business(record(
+            "L1", "Live Clinic", "physiotherapist", "Hitchin",
+            reviews=[{"time": ago(20)}]))
+        self.batch.write_business(record(
+            "D1", "Dormant Clinic", "physiotherapist", "Hitchin",
+            reviews=[{"time": ago(800)}]))
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_dormant_row_dropped_and_reported(self):
+        lines = []
+        merged = combine_batches([self.batch], weights=self.weights,
+                                 report=lines.append)
+        self.assertEqual([b["name"] for b in merged], ["Live Clinic"])
+        self.assertIn("1 excluded under the current rules", lines[0])
