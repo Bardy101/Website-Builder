@@ -55,6 +55,10 @@ SHORTLIST_COLUMNS = [
     "website_url",
     "photo_count",
     "place_id",
+    # Yours, not measured: whatever you typed while reviewing. Always blank in
+    # shortlist.csv (discover writes no notes); carried in approved.csv, and
+    # mirrored into review.json so a regenerated shortlist cannot lose it.
+    "notes",
 ]
 
 
@@ -256,4 +260,5 @@ def business_to_row(business: dict) -> dict:
         "website_url": business.get("website") or "",
         "photo_count": business.get("photo_count", 0),
         "place_id": business.get("place_id") or "",
+        "notes": business.get("notes") or "",
     }

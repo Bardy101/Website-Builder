@@ -84,8 +84,14 @@ Current task section is the main way this repo becomes confusing.
     niche or town, re-scoring under current weights), website contact lookup
     reconciled against Companies House directors (spec section 5 step 2),
     `run.py` — a menu wrapper over the CLIs — and `gui.py`, a tkinter window
-    (Find prospects / Batches / Setup, with a live output pane) launched by
-    `gui.bat` / `gui.command`. Both front ends are skins: they build command
+    (Find prospects / Shortlist / Batches / Setup, with a live output pane)
+    launched by `gui.bat` / `gui.command`. The **Shortlist** tab is the
+    editable review sheet backed by `pipeline/review.py`: decisions are read
+    from and written to `approved.csv` + `rejections.jsonl` (so `cull.py`,
+    the contact sheet and `tune.py` all still agree), while notes and a
+    hand-corrected `address_to` live in a `review.json` side-car that
+    survives a regenerated shortlist. Undecided rows save as keeps; a cull
+    without a reason code refuses to save. Both front ends are skins: they build command
     lines and run the CLIs as subprocesses. The CLI scripts remain
     argparse-first and scriptable as the conventions require. `gui.py`'s
     command builders are pure functions and unit-tested; the widgets only

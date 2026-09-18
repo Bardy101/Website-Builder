@@ -79,6 +79,7 @@ bottom:
 | Tab | What's on it |
 |---|---|
 | **Find prospects** | Niche, town, radius and row count; the searches you have already paid for, click one to reuse it free; tick boxes for screenshots, site checks, owner lookup and the two selection rules; a line telling you whether this run will bill Google before you press anything |
+| **Shortlist** | The batch as an editable sheet — see below |
 | **Batches** | Every batch with its found / kept / excluded counts and status. Select one to open its shortlist, its excluded list or its folder; build a contact sheet; import decisions. Ctrl-click several to combine them |
 | **Setup** | The three API keys with what each is for and where to get it, a Check setup button and a Test keys button |
 
@@ -88,6 +89,49 @@ can copy the command it printed and run it yourself.
 
 Needs tkinter, which python.org installers include by default. If the window
 won't open it says why, and the menu below still works.
+
+---
+
+## The Shortlist tab: view, cull, edit, save
+
+Pick a batch and the whole list is there, one row each, colour-coded: kept
+rows tinted, culled rows greyed out, undecided plain.
+
+- **Cull with the keyboard.** Select rows and press **k** to keep, **c** to
+  cull, **u** to undecide. Multi-select works, so five chains go in one go.
+  The reason dropdown applies to culls; changing it re-codes whatever culled
+  rows are selected.
+- **Edit in place.** Double-click **Address to** or **Notes** and type.
+  `address_to` is the one that matters when Companies House named the
+  registered owner but the website names the person who actually runs the
+  place. Everything else is measured, and editing a measurement by hand would
+  make the score a lie, so the other columns are read-only.
+- **Filter and find.** Show everything, only the undecided, only keeps or only
+  culls; the search box matches name, town or notes.
+- **Save decisions**, and it is all there next time you open it.
+
+**Where it is stored, and why that matters.** Decisions go to the same two
+files the rest of the pipeline already uses — `approved.csv` for the keeps, a
+rejection in `rejections.jsonl` for each cull. Nothing invents a private
+store, so a cull done in the contact sheet or by `cull.py` shows up here, and
+a cull done here feeds `tune.py` exactly as before.
+
+Notes and a corrected `address_to` are the one thing those files cannot keep
+(a regenerated shortlist would overwrite them), so they also go to
+`review.json` beside them, keyed by Place ID, and are re-applied on load.
+Delete that file and you lose the notes; the decisions survive.
+
+Two behaviours worth knowing:
+
+- **Rows you never touch count as keeps.** The sheet is a working list, and a
+  row you have not got to yet is not one you have rejected.
+- **A cull with no reason code will not save.** Blanks and free text are what
+  make a rejection useless to `tune.py` later, so it tells you which rows and
+  stops — writing nothing until they are coded.
+
+Un-culling works: clear a decision, save, and the rejection is removed rather
+than lingering in an append-only log. Rows already rejected keep their
+original `rejected_at`, so re-saving doesn't restate history it didn't change.
 
 ---
 

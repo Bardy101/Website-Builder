@@ -28,6 +28,7 @@ try:
     import run as menu  # the console menu: shared helpers and key metadata
     from pipeline.config import Config
     from pipeline.history import past_searches
+    from pipeline import review as review_mod
     from pipeline.storage import Batch
 except ImportError as exc:
     if "pipeline" not in str(exc):
@@ -283,9 +284,12 @@ def build_app():
             self._after_run: Optional[Callable[[int], None]] = None
             self._pairs_config: Optional[Path] = None
             self._build()
+            self.protocol("WM_DELETE_WINDOW", self.on_close)
             self.after(100, self._tick)
             self.refresh_history()
             self.refresh_batches()
+            self.refresh_review_picker()
+            self.load_review()
             self._log_line(f"Project folder: {HERE}")
             self._log_line(f"Python: {sys.executable}")
             if not self.config_obj.google_places_api_key:
@@ -300,9 +304,11 @@ def build_app():
 
             self.tabs = ttk.Notebook(outer)
             self.tab_find = ttk.Frame(self.tabs, padding=10)
+            self.tab_review = ttk.Frame(self.tabs, padding=10)
             self.tab_batches = ttk.Frame(self.tabs, padding=10)
             self.tab_setup = ttk.Frame(self.tabs, padding=10)
             self.tabs.add(self.tab_find, text="  Find prospects  ")
+            self.tabs.add(self.tab_review, text="  Shortlist  ")
             self.tabs.add(self.tab_batches, text="  Batches  ")
             self.tabs.add(self.tab_setup, text="  Setup  ")
             outer.add(self.tabs, weight=4)
@@ -329,6 +335,7 @@ def build_app():
             scroll.pack(side=tk.RIGHT, fill=tk.Y, pady=(4, 0))
 
             self._build_find()
+            self._build_review()
             self._build_batches()
             self._build_setup()
 
@@ -467,6 +474,383 @@ def build_app():
                 w.bind("<KeyRelease>", lambda _e: self.update_cost())
                 w.bind("<<ComboboxSelected>>", lambda _e: self.update_cost())
 
+        # -- shortlist tab ----------------------------------------------------
+
+        # What the sheet shows, and how wide. Decision first: it is the column
+        # you are here to change, and the eye should land on it.
+        REVIEW_COLUMNS = [
+            ("decision", "", 34, "center"),
+            ("lead_score", "Score", 52, "e"),
+            ("name", "Business", 210, "w"),
+            ("town", "Town", 92, "w"),
+            ("site_verdict", "Site", 92, "w"),
+            ("staleness_points", "Stale", 52, "e"),
+            ("review_count", "Reviews", 68, "e"),
+            ("recent_review_date", "Last review", 100, "w"),
+            ("address_to", "Address to", 140, "w"),
+            ("reason", "Cull reason", 110, "w"),
+            ("notes", "Notes", 200, "w"),
+        ]
+        EDITABLE_COLUMNS = {"address_to", "notes"}
+
+        def _build_review(self) -> None:
+            from pipeline.cull import REASON_CODES
+
+            self.reason_codes = list(REASON_CODES)
+            self.sheet = None
+            self.review_batch: Optional[Path] = None
+            self.review_dirty = False
+            self._editor = None
+
+            f = self.tab_review
+            f.columnconfigure(0, weight=1)
+            f.rowconfigure(2, weight=1)
+
+            # Row 0: which batch, and where it stands.
+            top = ttk.Frame(f)
+            top.grid(row=0, column=0, sticky="ew")
+            ttk.Label(top, text="Batch").pack(side=tk.LEFT)
+            self.review_pick = ttk.Combobox(top, state="readonly", width=44)
+            self.review_pick.pack(side=tk.LEFT, padx=(6, 8))
+            self.review_pick.bind("<<ComboboxSelected>>", lambda _e: self.load_review())
+            ttk.Button(top, text="Reload from disk",
+                       command=lambda: self.load_review(force=True)).pack(side=tk.LEFT)
+            ttk.Button(top, text="Open in spreadsheet",
+                       command=self.open_review_csv).pack(side=tk.LEFT, padx=6)
+            self.review_counts = ttk.Label(top, text="", foreground="#333")
+            self.review_counts.pack(side=tk.LEFT, padx=12)
+            self.review_dirty_label = ttk.Label(top, text="", foreground="#b35c00")
+            self.review_dirty_label.pack(side=tk.RIGHT)
+
+            # Row 1: narrowing the list down.
+            bar = ttk.Frame(f)
+            bar.grid(row=1, column=0, sticky="ew", pady=(8, 4))
+            ttk.Label(bar, text="Show").pack(side=tk.LEFT)
+            self.review_filter = ttk.Combobox(
+                bar, state="readonly", width=16,
+                values=["Everything", "Not yet decided", "Keeps", "Culls"])
+            self.review_filter.set("Everything")
+            self.review_filter.pack(side=tk.LEFT, padx=(6, 12))
+            self.review_filter.bind("<<ComboboxSelected>>", lambda _e: self.fill_review())
+            ttk.Label(bar, text="Find").pack(side=tk.LEFT)
+            self.review_search = ttk.Entry(bar, width=26)
+            self.review_search.pack(side=tk.LEFT, padx=6)
+            self.review_search.bind("<KeyRelease>", lambda _e: self.fill_review())
+            ttk.Label(bar, text="name, town or notes", foreground="#666").pack(side=tk.LEFT)
+
+            # Row 2: the sheet.
+            wrap = ttk.Frame(f)
+            wrap.grid(row=2, column=0, sticky="nsew")
+            wrap.columnconfigure(0, weight=1)
+            wrap.rowconfigure(0, weight=1)
+            cols = [c[0] for c in self.REVIEW_COLUMNS]
+            self.review_tree = ttk.Treeview(wrap, columns=cols, show="headings",
+                                            selectmode="extended")
+            for key, title, width, anchor in self.REVIEW_COLUMNS:
+                self.review_tree.heading(
+                    key, text=title, command=lambda k=key: self.sort_review(k))
+                self.review_tree.column(key, width=width, minwidth=width,
+                                        anchor=anchor, stretch=key in ("name", "notes"))
+            self.review_tree.column("name", minwidth=120)
+            self.review_tree.column("notes", minwidth=90)
+            self.review_tree.grid(row=0, column=0, sticky="nsew")
+            vsb = ttk.Scrollbar(wrap, command=self.review_tree.yview)
+            self.review_tree.configure(yscrollcommand=vsb.set)
+            vsb.grid(row=0, column=1, sticky="ns")
+            hsb = ttk.Scrollbar(wrap, orient=tk.HORIZONTAL, command=self.review_tree.xview)
+            self.review_tree.configure(xscrollcommand=hsb.set)
+            hsb.grid(row=1, column=0, sticky="ew")
+
+            # A kept row should read as settled and a culled one as struck
+            # out, at a glance, without reading the first column.
+            self.review_tree.tag_configure("keep", background="#eaf6ec")
+            self.review_tree.tag_configure("cull", background="#f2f2f2",
+                                           foreground="#8a8a8a")
+            self.review_tree.tag_configure("todo", background="#ffffff")
+
+            self.review_tree.bind("<Double-1>", self.begin_edit)
+            self.review_tree.bind("<Return>", lambda _e: self.mark(review_mod.KEEP))
+            self.review_tree.bind("k", lambda _e: self.mark(review_mod.KEEP))
+            self.review_tree.bind("c", lambda _e: self.mark(review_mod.CULL))
+            self.review_tree.bind("u", lambda _e: self.mark(review_mod.UNDECIDED))
+
+            # Row 3: what to do about the selection.
+            act = ttk.Frame(f)
+            act.grid(row=3, column=0, sticky="ew", pady=(8, 0))
+            ttk.Label(act, text="Selected rows:").pack(side=tk.LEFT)
+            ttk.Button(act, text="Keep  (k)",
+                       command=lambda: self.mark(review_mod.KEEP)).pack(side=tk.LEFT, padx=(8, 4))
+            ttk.Button(act, text="Cull  (c)",
+                       command=lambda: self.mark(review_mod.CULL)).pack(side=tk.LEFT, padx=4)
+            ttk.Button(act, text="Undecide  (u)",
+                       command=lambda: self.mark(review_mod.UNDECIDED)).pack(side=tk.LEFT, padx=4)
+            ttk.Label(act, text="reason").pack(side=tk.LEFT, padx=(16, 4))
+            self.review_reason = ttk.Combobox(act, state="readonly", width=17,
+                                              values=self.reason_codes)
+            self.review_reason.set(self.reason_codes[0])
+            self.review_reason.pack(side=tk.LEFT)
+            self.review_reason.bind("<<ComboboxSelected>>",
+                                    lambda _e: self.apply_reason())
+            self.review_save = ttk.Button(act, text="Save decisions",
+                                          command=self.save_review)
+            self.review_save.pack(side=tk.RIGHT, ipadx=8)
+
+            ttk.Label(f, text="Double-click 'Address to' or 'Notes' to edit. "
+                      "Culling needs a reason code — that is what tune.py learns from. "
+                      "Rows you never touch count as keeps.",
+                      foreground="#666").grid(row=4, column=0, sticky="w", pady=(6, 0))
+
+        # -- shortlist: data --------------------------------------------------
+
+        def refresh_review_picker(self) -> None:
+            self.review_folders = menu.list_batches()
+            names = [f.name for f in self.review_folders]
+            self.review_pick.configure(values=names)
+            if names and not self.review_pick.get():
+                self.review_pick.set(names[0])
+
+        def _selected_review_folder(self) -> Optional[Path]:
+            name = self.review_pick.get()
+            return next((f for f in getattr(self, "review_folders", [])
+                         if f.name == name), None)
+
+        def load_review(self, force: bool = False) -> None:
+            folder = self._selected_review_folder()
+            if folder is None:
+                return
+            if self.review_dirty and not force and not messagebox.askokcancel(
+                APP_TITLE, "There are unsaved decisions on this sheet. "
+                "Loading another batch will discard them. Continue?"):
+                # Put the picker back where it was.
+                if self.review_batch is not None:
+                    self.review_pick.set(self.review_batch.name)
+                return
+            self._cancel_edit()
+            try:
+                self.sheet = review_mod.load(Batch(folder))
+            except Exception as exc:  # noqa: BLE001
+                messagebox.showerror(APP_TITLE, f"Could not read that batch:\n{exc}")
+                return
+            self.review_batch = folder
+            self.set_review_dirty(False)
+            self.fill_review()
+            if not len(self.sheet):
+                self._log_line(f"{folder.name}: shortlist.csv is empty.")
+
+        def _visible_rows(self) -> list:
+            if self.sheet is None:
+                return []
+            wanted = self.review_filter.get()
+            needle = self.review_search.get().strip().lower()
+            out = []
+            for row in self.sheet.rows:
+                if wanted == "Not yet decided" and row.decision != review_mod.UNDECIDED:
+                    continue
+                if wanted == "Keeps" and row.decision != review_mod.KEEP:
+                    continue
+                if wanted == "Culls" and row.decision != review_mod.CULL:
+                    continue
+                if needle and needle not in " ".join((
+                        row.name, row.get("town"), row.notes)).lower():
+                    continue
+                out.append(row)
+            return out
+
+        MARKS = {"keep": "✓", "cull": "✗", "": "·"}
+
+        def fill_review(self) -> None:
+            self._cancel_edit()
+            self.review_tree.delete(*self.review_tree.get_children())
+            for row in self._visible_rows():
+                tag = row.decision if row.decision else "todo"
+                values = []
+                for key, *_ in self.REVIEW_COLUMNS:
+                    if key == "decision":
+                        values.append(self.MARKS.get(row.decision, "·"))
+                    elif key == "reason":
+                        values.append(row.reason)
+                    elif key == "notes":
+                        values.append(row.notes)
+                    else:
+                        values.append(row.get(key))
+                self.review_tree.insert("", tk.END, iid=row.place_id,
+                                        values=values, tags=(tag,))
+            self.update_review_counts()
+
+        def update_review_counts(self) -> None:
+            if self.sheet is None:
+                self.review_counts.configure(text="")
+                return
+            counts = self.sheet.counts()
+            shown = len(self.review_tree.get_children())
+            text = (f"{counts[review_mod.KEEP]} keep · "
+                    f"{counts[review_mod.CULL]} cull · "
+                    f"{counts[review_mod.UNDECIDED]} undecided")
+            if shown != len(self.sheet):
+                text += f"   (showing {shown} of {len(self.sheet)})"
+            self.review_counts.configure(text=text)
+
+        def set_review_dirty(self, dirty: bool) -> None:
+            self.review_dirty = dirty
+            self.review_dirty_label.configure(
+                text="unsaved changes" if dirty else "")
+
+        def sort_review(self, key: str) -> None:
+            if self.sheet is None:
+                return
+            descending = getattr(self, "_review_sort", None) == key
+            self._review_sort = None if descending else key
+            if key == "lead_score":
+                self.sheet.rows.sort(key=lambda r: r.score(), reverse=not descending)
+            else:
+                self.sheet.rows.sort(key=lambda r: (r.reason if key == "reason"
+                                                    else r.get(key)).lower(),
+                                     reverse=descending)
+            self.fill_review()
+
+        # -- shortlist: decisions ---------------------------------------------
+
+        def _selected_rows(self) -> list:
+            if self.sheet is None:
+                return []
+            return [r for r in (self.sheet.by_id(i)
+                                for i in self.review_tree.selection()) if r]
+
+        def mark(self, decision: str) -> None:
+            rows = self._selected_rows()
+            if not rows:
+                return
+            reason = self.review_reason.get() if decision == review_mod.CULL else ""
+            for row in rows:
+                row.decision = decision
+                row.reason = reason
+            self.set_review_dirty(True)
+            self._refresh_rows(rows)
+            return "break"
+
+        def apply_reason(self) -> None:
+            """Changing the dropdown re-codes any culled rows selected."""
+            rows = [r for r in self._selected_rows() if r.decision == review_mod.CULL]
+            if not rows:
+                return
+            for row in rows:
+                row.reason = self.review_reason.get()
+            self.set_review_dirty(True)
+            self._refresh_rows(rows)
+
+        def _refresh_rows(self, rows) -> None:
+            """Repaint just the rows that changed, keeping scroll and selection."""
+            visible = {r.place_id for r in self._visible_rows()}
+            for row in rows:
+                if row.place_id not in visible:
+                    # It no longer matches the filter: drop it from view.
+                    if self.review_tree.exists(row.place_id):
+                        self.review_tree.delete(row.place_id)
+                    continue
+                if not self.review_tree.exists(row.place_id):
+                    self.fill_review()
+                    return
+                self.review_tree.item(
+                    row.place_id,
+                    values=[(self.MARKS.get(row.decision, "·") if key == "decision"
+                             else row.reason if key == "reason"
+                             else row.notes if key == "notes"
+                             else row.get(key))
+                            for key, *_ in self.REVIEW_COLUMNS],
+                    tags=(row.decision if row.decision else "todo",))
+            self.update_review_counts()
+
+        # -- shortlist: inline editing ----------------------------------------
+
+        def begin_edit(self, event) -> None:
+            """Put an Entry over the cell that was double-clicked."""
+            if self.sheet is None:
+                return
+            item = self.review_tree.identify_row(event.y)
+            column = self.review_tree.identify_column(event.x)
+            if not item or not column:
+                return
+            index = int(column[1:]) - 1
+            if not 0 <= index < len(self.REVIEW_COLUMNS):
+                return
+            key = self.REVIEW_COLUMNS[index][0]
+            if key not in self.EDITABLE_COLUMNS:
+                return
+            row = self.sheet.by_id(item)
+            if row is None:
+                return
+            box = self.review_tree.bbox(item, column)
+            if not box:
+                return
+            self._cancel_edit()
+            x, y, width, height = box
+            entry = ttk.Entry(self.review_tree)
+            entry.insert(0, row.notes if key == "notes" else row.get(key))
+            entry.select_range(0, tk.END)
+            entry.place(x=x, y=y, width=width, height=height)
+            entry.focus_set()
+            entry.bind("<Return>", lambda _e: self._commit_edit())
+            entry.bind("<Escape>", lambda _e: self._cancel_edit())
+            entry.bind("<FocusOut>", lambda _e: self._commit_edit())
+            self._editor = (entry, row, key)
+
+        def _commit_edit(self) -> None:
+            if self._editor is None:
+                return
+            entry, row, key = self._editor
+            value = entry.get().strip()
+            self._editor = None
+            entry.destroy()
+            if value != (row.notes if key == "notes" else row.get(key)):
+                row.set(key, value)
+                self.set_review_dirty(True)
+                self._refresh_rows([row])
+
+        def _cancel_edit(self) -> None:
+            if self._editor is None:
+                return
+            entry, _row, _key = self._editor
+            self._editor = None
+            entry.destroy()
+
+        # -- shortlist: saving -------------------------------------------------
+
+        def save_review(self) -> None:
+            if self.sheet is None or self.review_batch is None:
+                return
+            self._commit_edit()
+            problems = review_mod.validate(self.sheet)
+            if problems:
+                shown = "\n".join(problems[:8])
+                if len(problems) > 8:
+                    shown += f"\n… and {len(problems) - 8} more"
+                messagebox.showwarning(
+                    APP_TITLE,
+                    "Every cull needs a reason code before this can be saved:\n\n"
+                    + shown + "\n\nSelect those rows and pick a reason.")
+                return
+            try:
+                result = review_mod.save(Batch(self.review_batch), self.sheet)
+            except Exception as exc:  # noqa: BLE001
+                messagebox.showerror(APP_TITLE, f"Could not save:\n{exc}")
+                return
+            self.set_review_dirty(False)
+            self._log_line(
+                f"{self.review_batch.name}: saved {result['approved']} approved, "
+                f"{result['rejected']} rejected -> approved.csv, rejections.jsonl")
+            if result["reasons"]:
+                self._log_line("  " + ", ".join(
+                    f"{n} {code}" for code, n in
+                    sorted(result["reasons"].items(), key=lambda kv: -kv[1])))
+            self.refresh_batches()
+
+        def open_review_csv(self) -> None:
+            folder = self._selected_review_folder()
+            if folder is None:
+                return
+            approved = folder / "approved.csv"
+            self._open(approved if approved.is_file() else folder / "shortlist.csv")
+
         def _build_batches(self) -> None:
             f = self.tab_batches
             f.columnconfigure(0, weight=1)
@@ -510,6 +894,8 @@ def build_app():
 
             s = section("Cull")
             self.sheet_approved_only = tk.BooleanVar(value=True)
+            ttk.Button(s, text="Review on the Shortlist tab",
+                       command=self.review_selected_batch).pack(fill=tk.X, pady=(1, 6))
             ttk.Button(s, text="Build contact sheet", command=self.run_contactsheet).pack(fill=tk.X, pady=1)
             ttk.Checkbutton(s, text="approved rows only, if culled",
                             variable=self.sheet_approved_only).pack(anchor="w")
@@ -680,6 +1066,14 @@ def build_app():
             if cb is not None:
                 cb(code)
 
+        def on_close(self) -> None:
+            if self.review_dirty and not messagebox.askokcancel(
+                APP_TITLE, "There are unsaved decisions on the Shortlist tab. "
+                "Close anyway?"):
+                return
+            self.runner.stop()
+            self.destroy()
+
         def stop_run(self) -> None:
             self.runner.stop()
             self._log_line("[stopped]")
@@ -805,12 +1199,15 @@ def build_app():
             def done(code: int) -> None:
                 self.refresh_history()
                 self.refresh_batches()
+                self.refresh_review_picker()
                 if code == 0:
-                    self.tabs.select(self.tab_batches)
-                    kids = self.batch_tree.get_children()
-                    if kids:
-                        self.batch_tree.selection_set(kids[0])
-                        self.batch_tree.focus(kids[0])
+                    # Straight to the list it just built — that is the next
+                    # thing to do with it, and the reason the run was started.
+                    folders = menu.list_batches()
+                    if folders:
+                        self.review_pick.set(folders[0].name)
+                        self.load_review(force=True)
+                    self.tabs.select(self.tab_review)
 
             self.start(argv, "find prospects", after=done)
 
@@ -828,6 +1225,14 @@ def build_app():
                     s["name"], s["found"],
                     "" if s["approved"] is None else s["approved"],
                     s["excluded"] or "", s["status"]))
+
+        def review_selected_batch(self) -> None:
+            folder = self._one_batch()
+            if folder is None:
+                return
+            self.review_pick.set(folder.name)
+            self.load_review()
+            self.tabs.select(self.tab_review)
 
         def open_best_csv(self) -> None:
             folder = self._one_batch()
@@ -879,7 +1284,7 @@ def build_app():
             if not chosen:
                 return
             argv = cull_import_command(folder, Path(chosen), start_over=self.cull_start_over.get())
-            self.start(argv, "import decisions", after=lambda _c: self.refresh_batches())
+            self.start(argv, "import decisions", after=lambda _c: self._after_cull(folder))
 
         def import_csv_reasons(self) -> None:
             folder = self._one_batch()
@@ -895,7 +1300,13 @@ def build_app():
                 "as CSV, then press OK."):
                 return
             argv = cull_csv_command(folder, csv_name, start_over=self.cull_start_over.get())
-            self.start(argv, "import reasons", after=lambda _c: self.refresh_batches())
+            self.start(argv, "import reasons", after=lambda _c: self._after_cull(folder))
+
+        def _after_cull(self, folder: Path) -> None:
+            """A cull run outside the sheet changed the files it reads."""
+            self.refresh_batches()
+            if self.review_batch is not None and self.review_batch == folder:
+                self.load_review(force=True)
 
         def run_combine(self, all_batches: bool = False) -> None:
             if all_batches:
