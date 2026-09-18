@@ -737,7 +737,22 @@ def action_contactsheet() -> None:
         print("shortlist' to apply the downloaded decisions.json.")
 
 
+def action_window() -> None:
+    """Hand over to the window version, which does everything this menu does."""
+    try:
+        import tkinter  # noqa: F401
+    except ImportError:
+        print("\nThis Python was installed without tkinter, which draws the window.")
+        print("On Windows: re-run the python.org installer, choose Modify, and")
+        print("tick 'tcl/tk and IDLE'. On Linux: install python3-tk.")
+        print("\nThe menu you are using now works regardless.")
+        return
+    print("\nOpening the window… close it to come back to this menu.")
+    subprocess.run([sys.executable, str(HERE / "gui.py")], check=False)
+
+
 MENU = [
+    ("0", "Open the window version (everything below, with buttons)", action_window),
     ("1", "Find prospects (one or several niches/towns)", action_find),
     ("2", "Build a contact sheet (cull by eye, from screenshots)", action_contactsheet),
     ("3", "Review a shortlist (cull to your 10-15)", action_cull),

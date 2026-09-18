@@ -57,7 +57,7 @@ cd Website-Builder
 py -m pip install -r requirements.txt
 ```
 
-Then **double-click `run.bat`** in the project folder. That's the whole
+Then **double-click `gui.bat`** in the project folder. That's the whole
 workflow — no command line after setup.
 
 Use `py` (the Python launcher) rather than the full
@@ -70,7 +70,28 @@ Paths in the examples below use forward slashes; PowerShell accepts either.
 
 ---
 
-## The easy way: the menu
+## The easy way: the window
+
+**Double-click `gui.bat`** (Windows) or **`gui.command`** (macOS). Or type
+`python gui.py`. Three tabs, and the output of whatever is running along the
+bottom:
+
+| Tab | What's on it |
+|---|---|
+| **Find prospects** | Niche, town, radius and row count; the searches you have already paid for, click one to reuse it free; tick boxes for screenshots, site checks, owner lookup and the two selection rules; a line telling you whether this run will bill Google before you press anything |
+| **Batches** | Every batch with its found / kept / excluded counts and status. Select one to open its shortlist, its excluded list or its folder; build a contact sheet; import decisions. Ctrl-click several to combine them |
+| **Setup** | The three API keys with what each is for and where to get it, a Check setup button and a Test keys button |
+
+It is a skin over the same scripts — each button builds a command line, shows
+it in the output pane, and runs it. Nothing is hidden: if a run misbehaves you
+can copy the command it printed and run it yourself.
+
+Needs tkinter, which python.org installers include by default. If the window
+won't open it says why, and the menu below still works.
+
+---
+
+## The other way: the menu
 
 **Double-click `run.bat`** (Windows) or **`run.command`** (macOS). Or type
 `python run.py`. You get a menu and never touch a flag:
@@ -80,6 +101,7 @@ Paths in the examples below use forward slashes; PowerShell accepts either.
   Postal Outreach Pipeline — prospect finder
 ============================================================
 
+  0  Open the window version (everything below, with buttons)
   1  Find prospects (one or several niches/towns)
   2  Build a contact sheet (cull by eye, from screenshots)
   3  Review a shortlist (cull to your 10-15)
@@ -433,6 +455,46 @@ later batch performs worse you can see what moved.
 | Squarespace / Framer / Webflow / Shopify | −15 | Someone pays for and maintains this |
 | Not OPERATIONAL | exclude | |
 | Chain / franchise name match | exclude | Head office decides, not the manager |
+| No review in 365 days | exclude | Dead listing, moved practice or a registered-office address |
+| Site verdict `fine` | exclude | Nothing wrong with it, so nothing to sell |
+
+### The two selection rules
+
+Both were added after live runs. The top of the list kept filling with
+hopeful-looking prospects — no website, good rating — that turned out to be
+listings nobody had touched in years, because **+40 for "no website" is the
+biggest number in the table and nothing asked whether the business was still
+there.** Meanwhile sites with nothing wrong with them still took up rows.
+
+**Dormant** needs positive evidence in both directions, so it never guesses:
+
+- No `review_count` at all means the details were never fetched — a search
+  stub. No evidence, no verdict.
+- A count of zero is real evidence: nobody has ever reviewed this listing.
+- A positive count with no dated reviews returned is *incomplete* evidence —
+  Places returns at most five reviews and picks them by relevance, not
+  recency — so it fails open and the business stays.
+
+It fires at the pre-details screen, so a dormant listing costs no Place
+Details call, no site fetch and no screenshot.
+
+**`fine`** excludes only a site that was actually measured and came back clean.
+A site whose fetch failed is `unknown`, not `fine`, and stays in the list.
+
+To loosen either for one run, without editing `weights.json`:
+
+```bash
+./find.py --niche physiotherapist --area Hitchin --keep-dormant --keep-fine
+./find.py --niche physiotherapist --area Hitchin --dormant-days 730
+```
+
+In the window they are the two tick boxes under **Selection rules**.
+
+**Every exclusion is written to `excluded.csv`** in the batch folder, with the
+reason, the detail behind it (`last review 2024-03-01`), the review count and
+the site verdict. Tightening the rules is exactly when you start asking "where
+did that one go?", and the per-business JSON never held the answer for a row
+that was dropped.
 
 **Mobile PageSpeed score does not score at all.** It measures page weight, not
 visual quality, and the two anti-correlate — good design costs bytes. The first

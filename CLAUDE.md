@@ -73,12 +73,23 @@ Current task section is the main way this repo becomes confusing.
   are captured per candidate and cached by `place_id`; `contactsheet.py`
   renders a self-contained cull sheet whose exported `decisions.json` imports
   via `cull.py --import`.
+  - Selection tightened 2026-09-18 after live runs: `weights.json` excludes
+    **dormant** listings (no review in `dormant_after_days`, default 365) and
+    sites whose verdict is **`fine`**. Dormancy needs positive evidence — a
+    missing `review_count` is a search stub, not a dead business — and fires
+    before the details call. Every exclusion is written to `excluded.csv` in
+    the batch folder with its reason and detail. `--keep-dormant`,
+    `--keep-fine` and `--dormant-days N` loosen a single run.
   - Also present beyond the spec's phase 0: `combine.py` (merge batches by
     niche or town, re-scoring under current weights), website contact lookup
-    reconciled against Companies House directors (spec section 5 step 2), and
-    `run.py` — a menu wrapper over the CLIs for evening use. The CLI scripts
-    remain argparse-first and scriptable as the conventions require; the menu
-    only drives them.
+    reconciled against Companies House directors (spec section 5 step 2),
+    `run.py` — a menu wrapper over the CLIs — and `gui.py`, a tkinter window
+    (Find prospects / Batches / Setup, with a live output pane) launched by
+    `gui.bat` / `gui.command`. Both front ends are skins: they build command
+    lines and run the CLIs as subprocesses. The CLI scripts remain
+    argparse-first and scriptable as the conventions require. `gui.py`'s
+    command builders are pure functions and unit-tested; the widgets only
+    collect values.
 - **Phase 1 — letter generation and batch one:** not started.
 - **Phase 2 — template-fill previews (tier 2):** not started. Delivery
   substrate settled 2026-09-02: Webflow on the **Core** Workspace tier
