@@ -265,6 +265,26 @@ One Claude API call per business, with a fixed system prompt and the business re
 > 5, 6 and 8 and the Essentials handover in `package-definition.md` to be
 > rewritten, not just narrowed.
 
+> **Amendment — Webflow brief (`mockup.py`). IMPLEMENTED 2026-09-23.** A
+> per-prospect brief is generated from what phase 0 collected: a prompt for
+> Webflow's AI Site Builder, a build sheet with every fact as a copyable
+> block, and `mockup.json` — the running field list tier 1 is meant to
+> produce, recorded automatically. Facts only; gaps become visible
+> `[placeholder]`s; the concept banner is always in it.
+>
+> **Two tensions with this section, flagged for the operator, not resolved
+> here.** (1) The paragraph below says an AI generator can't supply taste —
+> the AI-prompt route is offered because the operator asked for an AI helper
+> and has no master yet, and the sheet recommends switching to "duplicate the
+> master, paste the blocks" once one exists. (2) The rule above that there
+> is no Webflow site per prospect: each AI Site Builder run *is* one, and
+> counts against Core's ten staging sites until deleted. The master route
+> keeps the rule; the AI route breaks it deliberately and temporarily.
+>
+> Webflow cannot import arbitrary HTML into the Designer, so a prompt and
+> copy blocks are the few-clicks path; its internal clipboard format is
+> undocumented and was not used.
+
 **Premium feel does not come from the builder. It comes from the template.** No AI generator supplies taste you don't have — they reliably produce competent, generic layouts, which is the one thing that kills the premise of the letter. A bought, professionally designed template supplies the typography, spacing and colour decisions a designer already made; your job reduces to filling it in well, which is a job you can do.
 
 **Buy two or three premium HTML/Tailwind templates.** Roughly £30–80 each from the usual marketplaces, or a Tailwind component library. Pick them by target shape, not by industry label: a clinic/practice layout and a professional-services layout between them cover physios, accountants and conveyancers. You own the files.

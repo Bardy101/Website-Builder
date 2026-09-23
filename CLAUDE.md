@@ -120,6 +120,22 @@ Current task section is the main way this repo becomes confusing.
     argparse-first and scriptable as the conventions require. `gui.py`'s
     command builders are pure functions and unit-tested; the widgets only
     collect values.
+- **Webflow brief (`mockup.py`, `pipeline/mockup.py`):** built 2026-09-23,
+  on request rather than from a brief. For a chosen prospect it writes
+  `<batch>/<place_id>/mockup/` — `prompt.txt` for Webflow's AI Site Builder,
+  `brief.html` (a build sheet: a Copy button per fact, accent colour sampled
+  from their screenshot, placeholders to fill, current site) and
+  `mockup.json` (the tier-2 field list, recorded). Facts only: missing
+  facts become visible `[placeholder]`s, review quotes are verbatim and
+  skip any with a complaint, and a social/directory page is never mined
+  for colour or wording. Layout shape (clinic/professional/trades/generic)
+  follows the niche. The concept banner names `YOUR_BUSINESS_NAME` from
+  `.env` (Setup tab → You). The GUI's Shortlist pane has **Webflow brief**
+  (runs it, copies the prompt to the clipboard, opens the sheet); Batches
+  has a bulk option; `run.py` option 8. Two tensions with spec §7 (AI taste,
+  one Webflow site per prospect) are noted in the amendment there and still
+  open for the operator. `run.write_env` now keeps every `.env` setting it
+  doesn't manage, instead of dropping them on a key save.
 - **Phase 1 — letter generation and batch one:** not started.
 - **Phase 2 — template-fill previews (tier 2):** not started. Delivery
   substrate settled 2026-09-02: Webflow on the **Core** Workspace tier

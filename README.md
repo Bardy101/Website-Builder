@@ -203,6 +203,7 @@ original `rejected_at`, so re-saving doesn't restate history it didn't change.
   5  Open a shortlist in your spreadsheet app
   6  Tune the scoring from your decisions
   7  Setup & configuration (keys, checks, tests)
+  8  Webflow briefs for the businesses you kept
   q  Quit
 ```
 
@@ -800,6 +801,58 @@ from a neighbour's radius.
 
 ---
 
+## Mocking up a prospect in Webflow
+
+When you've found one worth a letter, select it in the **Shortlist** tab and
+press **Webflow brief**. Three things happen:
+
+1. A prompt built from everything the prospect phase collected goes onto your
+   clipboard.
+2. A build sheet (`brief.html`) opens in your browser.
+3. In Webflow, start a new site with the **AI Site Builder** and paste.
+
+The prompt carries only what was verified: name, trade and town, address,
+phone, opening hours, Google rating, up to three real review quotes (verbatim,
+five-star first, none that contain a complaint), whoever their website names,
+and — if they have a site of their own — their headline, the services they
+list and a paragraph or two in their own words. It tells Webflow to leave a
+`[placeholder]` for anything missing rather than invent it, to keep to one
+page with no CMS Collections (so the export matches the live site), and to
+put the concept banner across the top: *"Design concept for …, prepared by
+…. Not a live website."* Set your business name for that banner in **Setup →
+You** (it's `YOUR_BUSINESS_NAME` in `.env`).
+
+The build sheet has a **Copy** button on every piece — the prompt, the
+banner, each fact, each quote, their wording — plus the accent colour (sampled
+from a screenshot of their current site, or a safe palette for the layout if
+they have no site of their own), a list of what to fill in by hand, and the
+screenshot of what they have now.
+
+The layout follows the niche: **clinic** (physios, dentists, osteos…),
+**professional** (accountants, solicitors…), **trades** (plumbers,
+electricians…) or **generic** — the four masters the spec calls for, each with
+its own sections and call to action.
+
+**Two ways to use it.** The AI Site Builder route needs nothing prepared, but
+every run makes a new Webflow site, and Core allows ten staging sites — delete
+each once its mockup is exported. Once you have a master for a layout you
+like, duplicate it and paste the sheet's blocks into it instead: faster, no
+AI, and every mockup carries the design you chose.
+
+For every business you've kept at once, use **Batches → Webflow briefs for
+every kept one**, menu option 8, or the command line:
+
+```bash
+./mockup.py --batch batches/2026-09-01_physios_hitchin --place ChIJ... --open
+./mockup.py --batch batches/2026-09-01_physios_hitchin --approved
+```
+
+Each brief lands in the business's own folder, under `mockup/`: `prompt.txt`,
+`brief.html`, and `mockup.json` — the same content as data, which is the
+field list tier 2's templates will be filled from.
+
+---
+
 ## Batches from earlier versions
 
 **Every menu option works on batches you've already created. No re-scanning,
@@ -957,6 +1010,7 @@ batches/2026-09-01_physios_hitchin/
   approved.csv        the 10-15 you actually chose
   rejections.jsonl    every rejection, with the full record attached
   ChIJxxxx.../business.json
+  ChIJxxxx.../mockup/   prompt.txt, brief.html, mockup.json — the Webflow brief
 ```
 
 `batches/` and `.cache/` are gitignored — they're working output, not source.
@@ -966,7 +1020,7 @@ batches/2026-09-01_physios_hitchin/
 ## Development
 
 ```bash
-python3 -m unittest discover -s tests -t .      # 292 tests, no network needed
+python3 -m unittest discover -s tests -t .      # ~480 tests, no network needed
 ```
 
 Every network client takes an injectable transport, so the whole pipeline is
