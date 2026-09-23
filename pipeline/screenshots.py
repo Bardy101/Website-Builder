@@ -13,6 +13,8 @@ recapture.
 
 from __future__ import annotations
 
+import os
+
 import json
 import sys
 from dataclasses import dataclass, field
@@ -192,7 +194,13 @@ class ScreenshotCapturer:
                             page.wait_for_timeout(SETTLE_MS)
                         _dismiss_cookies(page)
                         # Above the fold only: the hero is what is judged.
-                        page.screenshot(path=str(out), full_page=False)
+                        # Written aside and renamed into place: a run stopped
+                        # mid-write would otherwise leave a truncated PNG that
+                        # the cache treats as a good capture for 30 days.
+                        partial = out.with_name(out.name + ".part")
+                        page.screenshot(path=str(partial), full_page=False,
+                                        type="png")
+                        os.replace(partial, out)
                     finally:
                         context.close()
             finally:

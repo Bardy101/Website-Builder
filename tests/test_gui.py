@@ -5,6 +5,7 @@ command lines the CLIs get. They import without tkinter, so this runs on
 any interpreter — the window itself is checked by rendering it under Xvfb.
 """
 
+import os
 import tempfile
 import unittest
 from datetime import datetime, timedelta, timezone
@@ -204,3 +205,46 @@ class TestHistoryRespectsTtl(unittest.TestCase):
 
             self.assertEqual(len(past_searches(tmp, ttl_days=30)), 1)
             self.assertEqual(past_searches(tmp, ttl_days=7), [])
+
+
+class TestStopKillsTheWholeTree(unittest.TestCase):
+    """Bug 10: Stop killed Python but left the browser running."""
+
+    def test_descendants_from_a_snapshot(self):
+        table = [(10, 1), (11, 10), (12, 11), (13, 10), (99, 1)]
+        self.assertEqual(sorted(gui.descendants(10, table)), [11, 12, 13])
+        self.assertEqual(gui.descendants(99, table), [])
+
+    @unittest.skipIf(os.name == "nt", "the POSIX path; Windows uses taskkill /T")
+    def test_detached_grandchild_is_killed(self):
+        """Mimics Playwright exactly: the browser is spawned detached, in its
+        own session, so a process-group kill cannot reach it."""
+        import subprocess
+        import sys
+        import time
+
+        with tempfile.TemporaryDirectory() as tmp:
+            pidfile = Path(tmp) / "grandchild.pid"
+            script = (
+                "import subprocess, sys, time\n"
+                "p = subprocess.Popen(['sleep', '300'], start_new_session=True)\n"
+                f"open({str(pidfile)!r}, 'w').write(str(p.pid))\n"
+                "time.sleep(300)\n"
+            )
+            done = []
+            runner = gui.Runner(lambda line: None, done.append)
+            runner.start(["-c", script])
+            for _ in range(100):
+                if pidfile.is_file() and pidfile.read_text():
+                    break
+                time.sleep(0.05)
+            grandchild = int(pidfile.read_text())
+            self.assertTrue(gui._alive(grandchild))
+
+            runner.stop()
+            for _ in range(60):
+                if not gui._alive(grandchild):
+                    break
+                time.sleep(0.05)
+            self.assertFalse(gui._alive(grandchild), "detached browser survived Stop")
+            self.assertFalse(runner.busy)

@@ -214,6 +214,91 @@ def batch_summary(folder: Path) -> dict:
     }
 
 
+# -- stopping a run, all of it -----------------------------------------------
+
+def descendants(pid: int, table: list[tuple[int, int]]) -> list[int]:
+    """Every process below ``pid`` in a (pid, parent_pid) table, deepest last.
+
+    Walked from a snapshot taken before anything is killed: once a parent
+    dies its children are re-parented and the lineage is gone.
+    """
+    children: dict[int, list[int]] = {}
+    for child, parent in table:
+        children.setdefault(parent, []).append(child)
+    out, queue_ = [], [pid]
+    while queue_:
+        current = queue_.pop(0)
+        for child in children.get(current, []):
+            if child not in out and child != pid:
+                out.append(child)
+                queue_.append(child)
+    return out
+
+
+def _process_table() -> list[tuple[int, int]]:
+    """(pid, ppid) for every process, via ps — present on macOS and Linux."""
+    try:
+        text = subprocess.run(["ps", "-A", "-o", "pid=", "-o", "ppid="],
+                              capture_output=True, text=True, timeout=5).stdout
+    except Exception:  # noqa: BLE001
+        return []
+    table = []
+    for line in text.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[0].isdigit() and parts[1].isdigit():
+            table.append((int(parts[0]), int(parts[1])))
+    return table
+
+
+def kill_tree(pid: int, *, grace: float = 3.0) -> None:
+    """Stop a process and everything it started — including the browser.
+
+    A plain terminate() missed Chromium on every platform, for different
+    reasons. On Windows, ending a process never touches its children.
+    Elsewhere, Playwright launches the browser detached (its own process
+    group leader), so even a process-group kill misses it. So: Windows gets
+    taskkill /T, which follows the parent lineage; macOS and Linux get the
+    tree from ps, a polite SIGTERM, and SIGKILL for whatever is left.
+    """
+    if os.name == "nt":
+        subprocess.run(["taskkill", "/T", "/F", "/PID", str(pid)],
+                       capture_output=True,
+                       creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0))
+        return
+
+    import signal
+    import time
+
+    targets = [pid] + descendants(pid, _process_table())
+    for target in targets:
+        try:
+            os.kill(target, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            pass
+    deadline = time.monotonic() + grace
+    while time.monotonic() < deadline and any(_alive(t) for t in targets):
+        time.sleep(0.1)
+    for target in targets:
+        if _alive(target):
+            try:
+                os.kill(target, signal.SIGKILL)
+            except (ProcessLookupError, PermissionError):
+                pass
+
+
+def _alive(pid: int) -> bool:
+    """Running, not merely a zombie awaiting its (possibly absent) reaper."""
+    try:
+        os.kill(pid, 0)
+    except (ProcessLookupError, PermissionError):
+        return False
+    try:
+        with open(f"/proc/{pid}/stat", encoding="ascii") as fh:
+            return fh.read().rsplit(")", 1)[1].split()[0] != "Z"
+    except OSError:
+        return True   # no /proc (macOS): trust kill(0)
+
+
 # -- subprocess runner --------------------------------------------------------
 
 class Runner:
@@ -261,8 +346,9 @@ class Runner:
         self.lines.put(("__done__", self.proc.returncode))
 
     def stop(self) -> None:
+        """Stop the run and everything under it (see kill_tree)."""
         if self.busy and self.proc is not None:
-            self.proc.terminate()
+            kill_tree(self.proc.pid)
 
     def drain(self) -> None:
         """Called from the Tk loop: move queued lines into the widget."""
