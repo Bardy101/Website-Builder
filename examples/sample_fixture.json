@@ -1,5 +1,7 @@
 {
   "_comment": "Invented businesses for offline demo and tests. Not real. Run: ./find.py --niche physiotherapist --area Hitchin --fixture examples/sample_fixture.json --no-site-checks",
+  "_dates_relative_to": "2026-08-25",
+  "_dates_comment": "Review dates are written as of this day and shifted on load so they keep the same age relative to today. Without that the demo decays: a review that was recent when written turns stale, then dormant, and within a year the demo returns nothing.",
   "places": [
     {
       "id": "ChIJfixture0000000001",

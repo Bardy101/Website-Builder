@@ -7,6 +7,7 @@ original 19-column shortlist.csv) must still cull, combine and tune.
 """
 
 import csv
+from datetime import datetime, timedelta, timezone
 import json
 import tempfile
 import unittest
@@ -27,6 +28,9 @@ V1_COLUMNS = [
     "photo_count", "place_id",
 ]
 
+RECENT_REVIEW = (datetime.now(timezone.utc) - timedelta(days=30)).strftime(
+    "%Y-%m-%dT10:00:00Z")
+
 V1_BUSINESS = {
     "place_id": "ChIJold001",
     "name": "Old Format Physio",
@@ -41,7 +45,9 @@ V1_BUSINESS = {
     "business_status": "OPERATIONAL",
     "photos": [],
     "photo_count": 0,
-    "reviews": [{"text": "Great", "rating": 5, "time": "2026-07-01T10:00:00Z"}],
+    # Relative to today: an absolute date here turns the business dormant a
+    # year later, and every combine test below starts returning nothing.
+    "reviews": [{"text": "Great", "rating": 5, "time": RECENT_REVIEW}],
     # No "parts" or "all_directors" — those came later.
     "owner": {"name": "Jane Cooper", "source": "companies_house",
               "confidence": "high"},
@@ -67,7 +73,7 @@ class LegacyBatchCase(unittest.TestCase):
                 "lead_score": 15, "name": "Old Format Physio", "town": "Hitchin",
                 "website": "https://oldformat.example", "site_verdict": "dated",
                 "mobile_score": 62, "https": "yes", "rating": 4.7,
-                "review_count": 60, "recent_review_date": "2026-07-01",
+                "review_count": 60, "recent_review_date": RECENT_REVIEW[:10],
                 "owner_name": "Jane Cooper", "company_type": "ltd",
                 "phone": "01462 111111", "address": "1 High St, Hitchin",
                 "postcode": "SG5 1AA", "maps_url": "https://maps.google.com/?cid=1",

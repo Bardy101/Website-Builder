@@ -13,11 +13,14 @@ from pathlib import Path
 
 from pipeline.cache import Cache
 from pipeline.discover import discover
+from pipeline.fixtures import FixturePlacesClient
 from pipeline.places import SEARCH_FIELDS, PlacesClient
 from pipeline.scoring import Weights
 
 ROOT = Path(__file__).resolve().parent.parent
-FIXTURE = json.loads((ROOT / "examples" / "sample_fixture.json").read_text())["places"]
+# Through the fixture loader, not json.loads: the loader rebases review
+# dates to today, and a raw read would put these tests back on the calendar.
+FIXTURE = FixturePlacesClient.from_file(ROOT / "examples" / "sample_fixture.json").places
 
 
 def stub_for(place):
@@ -331,7 +334,7 @@ class TestConcurrentEnrichment(unittest.TestCase):
         self.assertIn("Bancroft Physio Rooms", names)  # unaffected rows survive
         broken = next(b for b in result.businesses
                       if b["name"] == "Walsworth Road Sports Injury Clinic")
-        self.assertIn("enrich_error", broken)
+        self.assertIn("site check", broken["enrich_errors"])
         # The URL-only baseline verdict still stands for the broken row.
         self.assertEqual(broken["site_score"]["verdict"], "social_only")
 

@@ -11,8 +11,11 @@ trying the tool before keys arrive, and for the test suite.
 
 from __future__ import annotations
 
+import copy
 import json
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from typing import Optional
 
 
 class FixturePlacesClient:
@@ -23,9 +26,14 @@ class FixturePlacesClient:
         self._by_id = {p.get("id"): p for p in places}
 
     @classmethod
-    def from_file(cls, path: str | Path) -> "FixturePlacesClient":
+    def from_file(cls, path: str | Path, *, today: Optional[date] = None) -> "FixturePlacesClient":
         data = json.loads(Path(path).read_text(encoding="utf-8"))
-        return cls(data.get("places", []))
+        places = data.get("places", [])
+        anchor = data.get("_dates_relative_to")
+        if anchor:
+            places = rebase_review_dates(places, date.fromisoformat(anchor),
+                                         today or datetime.now(timezone.utc).date())
+        return cls(places)
 
     def search(self, niche, area, *, radius_m=8000, max_results=60, region="gb"):
         """Return stubs for fixture places matching the niche, if tagged.
@@ -77,3 +85,30 @@ class FixturePlacesClient:
         return any(
             n.lower() == niche.lower() and a.lower() == area.lower() for n, a in pairs
         )
+
+
+def rebase_review_dates(places: list[dict], anchor: date, today: date) -> list[dict]:
+    """Shift every review's publishTime by (today - anchor), on a copy.
+
+    A fixture with fixed dates is a slow time bomb here, because recency is
+    scored: a review 66 days old when written is "recent" (<90 days) for
+    three weeks, then isn't, and after a year the business is excluded as
+    dormant. Shifting keeps each review exactly as old as it was on the day
+    the fixture was written, so the demo and the tests behave the same on
+    any date. Only publishTime moves; nothing else in a place is dated.
+    """
+    shift = today - anchor
+    if not shift:
+        return places
+    out = copy.deepcopy(places)
+    for place in out:
+        for review in place.get("reviews") or []:
+            stamp = review.get("publishTime")
+            if not stamp:
+                continue
+            try:
+                when = datetime.fromisoformat(stamp.replace("Z", "+00:00"))
+            except ValueError:
+                continue
+            review["publishTime"] = (when + shift).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return out

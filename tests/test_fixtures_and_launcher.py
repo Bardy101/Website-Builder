@@ -2,10 +2,13 @@
 
 import json
 import tempfile
+from datetime import datetime, timezone
 import unittest
 from pathlib import Path
 
 from pipeline.fixtures import FixturePlacesClient
+
+ROOT = Path(__file__).resolve().parent.parent
 
 FIXTURE = Path(__file__).resolve().parent.parent / "examples" / "sample_fixture.json"
 
@@ -228,3 +231,68 @@ class TestPairsConfig(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestFixtureDatesDontDecay(unittest.TestCase):
+    """Bug 5: the fixture's absolute review dates made tests flip by calendar
+    and would have emptied the demo within a year."""
+
+    FIXTURE = Path(__file__).resolve().parent.parent / "examples" / "sample_fixture.json"
+
+    def newest_review_ages(self, today):
+        from pipeline.fixtures import FixturePlacesClient
+
+        client = FixturePlacesClient.from_file(self.FIXTURE, today=today)
+        ages = {}
+        for place in client.places:
+            stamps = [r["publishTime"] for r in place.get("reviews") or []]
+            if stamps:
+                newest = datetime.fromisoformat(max(stamps).replace("Z", "+00:00")).date()
+                ages[place["id"]] = (today - newest).days
+        return ages
+
+    def test_ages_are_identical_whatever_the_date(self):
+        from datetime import date
+
+        base = self.newest_review_ages(date(2026, 8, 25))
+        for later in (date(2026, 9, 23), date(2027, 8, 1), date(2031, 1, 1)):
+            self.assertEqual(self.newest_review_ages(later), base, later)
+
+    def test_demo_scores_recency_today(self):
+        # The exact regression: Walsworth's review was 66 days old when the
+        # fixture was written, so it must count as recent (+5) on any date.
+        from pipeline.discover import discover
+        from pipeline.fixtures import FixturePlacesClient
+        from pipeline.scoring import Weights
+
+        result = discover(niche="physiotherapist", area="Hitchin",
+                          places_client=FixturePlacesClient.from_file(self.FIXTURE),
+                          weights=Weights.load(ROOT / "weights.json"), top=25)
+        walsworth = next(b for b in result.businesses
+                         if b["name"] == "Walsworth Road Sports Injury Clinic")
+        self.assertIn("recent_review_activity", walsworth["score_breakdown"])
+        self.assertNotIn("dormant", {b.get("excluded") for b in result.excluded})
+
+    def test_file_is_not_modified_on_disk(self):
+        before = self.FIXTURE.read_bytes()
+        from datetime import date
+
+        from pipeline.fixtures import FixturePlacesClient
+
+        FixturePlacesClient.from_file(self.FIXTURE, today=date(2030, 1, 1))
+        self.assertEqual(self.FIXTURE.read_bytes(), before)
+
+    def test_fixture_without_an_anchor_is_left_alone(self):
+        import json
+        import tempfile
+        from datetime import date
+
+        from pipeline.fixtures import FixturePlacesClient
+
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "f.json"
+            path.write_text(json.dumps({"places": [{"id": "a", "reviews": [
+                {"publishTime": "2026-01-01T00:00:00Z"}]}]}), encoding="utf-8")
+            client = FixturePlacesClient.from_file(path, today=date(2030, 1, 1))
+            self.assertEqual(client.places[0]["reviews"][0]["publishTime"],
+                             "2026-01-01T00:00:00Z")
