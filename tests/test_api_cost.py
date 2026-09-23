@@ -400,3 +400,43 @@ class TestReRunForContactData(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestDormancyCost(unittest.TestCase):
+    """Pins what the README claims dormancy saves — and what it doesn't.
+
+    An earlier version of the docs said it fired before the details call.
+    It can't: the evidence (review count and dates) only arrives with
+    details. This test holds the docs to what the code actually does.
+    """
+
+    def test_dormant_listing_costs_details_but_nothing_after(self):
+        import copy
+
+        places = copy.deepcopy(FIXTURE)
+        for p in places:
+            for r in p.get("reviews") or []:
+                r["publishTime"] = "2020-01-01T00:00:00Z"   # long dormant
+
+        checked = []
+
+        class Checker:
+            def check(self, website):
+                checked.append(website)
+                from pipeline.site_checks import SiteCheck
+
+                c = SiteCheck(False, False)
+                c.verdict = "none"
+                return c
+
+        client = make_client(places=places)
+        result = discover(niche="physiotherapist", area="Hitchin",
+                          places_client=client, site_checker=Checker(),
+                          weights=Weights.load(ROOT / "weights.json"), top=25)
+        dormant = [b for b in result.excluded if b.get("excluded") == "dormant"]
+        self.assertTrue(dormant)
+        # The details call was made for each of them...
+        self.assertGreaterEqual(client.stats["details_fetched"], len(dormant))
+        # ...but none of them got a site check.
+        dormant_sites = {b.get("website") for b in dormant}
+        self.assertFalse(dormant_sites & set(checked))

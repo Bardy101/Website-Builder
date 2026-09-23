@@ -76,9 +76,12 @@ Current task section is the main way this repo becomes confusing.
   - Selection tightened 2026-09-18 after live runs: `weights.json` excludes
     **dormant** listings (no review in `dormant_after_days`, default 365) and
     sites whose verdict is **`fine`**. Dormancy needs positive evidence — a
-    missing `review_count` is a search stub, not a dead business — and fires
-    before the details call. Every exclusion is written to `excluded.csv` in
-    the batch folder with its reason and detail. `--keep-dormant`,
+    missing `review_count` is a search stub, not a dead business — so it
+    fires after the Place Details call (which it therefore does not save) and
+    before every other lookup (which it does). Every exclusion is written to
+    `excluded.csv` in the batch folder with its reason and detail; a lookup
+    that fails is recorded per step in `lookup_errors.csv` and never blocks
+    the business's other lookups. `--keep-dormant`,
     `--keep-fine` and `--dormant-days N` loosen a single run.
   - Also present beyond the spec's phase 0: `combine.py` (merge batches by
     niche or town, re-scoring under current weights), website contact lookup
@@ -86,12 +89,16 @@ Current task section is the main way this repo becomes confusing.
     `run.py` — a menu wrapper over the CLIs — and `gui.py`, a tkinter window
     (Find prospects / Shortlist / Batches / Setup, with a live output pane)
     launched by `gui.bat` / `gui.command`. The **Shortlist** tab is the
-    editable review sheet backed by `pipeline/review.py`: decisions are read
-    from and written to `approved.csv` + `rejections.jsonl` (so `cull.py`,
-    the contact sheet and `tune.py` all still agree), while notes and a
-    hand-corrected `address_to` live in a `review.json` side-car that
-    survives a regenerated shortlist. Undecided rows save as keeps; a cull
-    without a reason code refuses to save. Both front ends are skins: they build command
+    editable review sheet backed by `pipeline/review.py`, which is the
+    **single writer** of `approved.csv` and `rejections.jsonl` — `cull.py`
+    applies its decisions through it too, so the console, the contact sheet
+    and the sheet follow one set of rules. Edits (`address_to`, `notes`) live
+    in the row that holds the decision, so editing `approved.csv` in a
+    spreadsheet is a supported workflow; measurements are only ever read from
+    `shortlist.csv`. The rejection log is rewritten, not appended, so an
+    un-cull or a `--full` start-over really removes the rejection. Undecided
+    rows save as keeps; a cull without a reason code refuses to save.
+    Both front ends are skins: they build command
     lines and run the CLIs as subprocesses. The CLI scripts remain
     argparse-first and scriptable as the conventions require. `gui.py`'s
     command builders are pure functions and unit-tested; the widgets only

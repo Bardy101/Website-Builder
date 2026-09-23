@@ -519,8 +519,14 @@ there.** Meanwhile sites with nothing wrong with them still took up rows.
   Places returns at most five reviews and picks them by relevance, not
   recency — so it fails open and the business stays.
 
-It fires at the pre-details screen, so a dormant listing costs no Place
-Details call, no site fetch and no screenshot.
+**What it saves, exactly.** Dormancy needs the review count and dates, and
+Text Search doesn't return them — only Place Details does. So a dormant
+listing still costs **one Place Details call** (Enterprise tier, 1,000 free a
+month). What it saves is everything after that: the site fetch, PageSpeed,
+the screenshot, the Companies House lookup and the About-page read. Chains
+and closed businesses are the ones screened before the details call, from
+fields the search does return.
+
 
 **`fine`** excludes only a site that was actually measured and came back clean.
 A site whose fetch failed is `unknown`, not `fine`, and stays in the list.
