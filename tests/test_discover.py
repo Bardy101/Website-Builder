@@ -269,3 +269,104 @@ class TestExcludedList(unittest.TestCase):
         ]
         self.assertTrue(fine_now_kept)
         self.assertGreater(len(loosened.businesses), len(strict.businesses))
+
+
+class TestLookupIsolation(unittest.TestCase):
+    """Bug 4: one failed lookup took the others down with it, silently."""
+
+    class Boom:
+        def check(self, website):
+            raise RuntimeError("parser choked on this page")
+
+    class CH:
+        def lookup(self, name, postcode):
+            return {"owner": {"name": "Jane Doe", "confidence": "high"},
+                    "company": {"type": "ltd"}}
+
+    class Contacts:
+        def find(self, url):
+            return {"contact": {"name": "Jay"}, "emails": []}
+
+    def business(self):
+        return {"name": "Odd HTML Clinic", "website": "https://odd.example",
+                "address": {"postcode": "SG5 1AA"}, "place_id": "X1",
+                "owner": {"name": None}, "company": {"type": "unknown"},
+                "site_score": {"verdict": "unknown"}}
+
+    def enrich(self, b, **kw):
+        from pipeline.discover import _enrich_all
+
+        args = dict(site_checker=self.Boom(), companies_house=self.CH(),
+                    site_contacts=self.Contacts())
+        args.update(kw)
+        _enrich_all([b], workers=1, say=lambda m: None, **args)
+
+    def test_site_check_failure_does_not_cost_the_owner(self):
+        b = self.business()
+        self.enrich(b)
+        self.assertEqual(b["owner"]["name"], "Jane Doe")
+        self.assertEqual(b["site_contact"], {"name": "Jay"})
+
+    def test_failed_step_is_recorded_and_fails_open(self):
+        b = self.business()
+        self.enrich(b)
+        self.assertIn("site check", b["enrich_errors"])
+        self.assertIn("parser choked", b["enrich_errors"]["site check"])
+        self.assertEqual(b["site_score"]["verdict"], "unknown")
+
+    def test_owner_failure_does_not_cost_the_site_check(self):
+        class GoodChecker:
+            def check(self, website):
+                from pipeline.site_checks import SiteCheck
+
+                c = SiteCheck(True, False, https=True)
+                c.verdict = "dated"
+                return c
+
+        class BadCH:
+            def lookup(self, name, postcode):
+                raise ConnectionError("companies house timed out")
+
+        b = self.business()
+        self.enrich(b, site_checker=GoodChecker(), companies_house=BadCH())
+        self.assertEqual(b["site_score"]["verdict"], "dated")
+        self.assertEqual(list(b["enrich_errors"]), ["owner lookup"])
+
+    def test_clean_run_leaves_no_error_record(self):
+        class GoodChecker:
+            def check(self, website):
+                from pipeline.site_checks import SiteCheck
+
+                c = SiteCheck(True, False)
+                c.verdict = "fine"
+                return c
+
+        b = self.business()
+        b["enrich_errors"] = {"site check": "from a previous run"}
+        self.enrich(b, site_checker=GoodChecker())
+        self.assertNotIn("enrich_errors", b)
+
+    def test_errors_written_to_lookup_errors_csv(self):
+        import csv
+
+        from pipeline.discover import DiscoverResult
+
+        b = self.business()
+        self.enrich(b)
+        with tempfile.TemporaryDirectory() as tmp:
+            batch = Batch.create(tmp, niche="x", area="y")
+            write_batch(batch, DiscoverResult(rows=[], businesses=[b], excluded=[]))
+            path = batch.path / "lookup_errors.csv"
+            with path.open(encoding="utf-8") as fh:
+                rows = list(csv.DictReader(fh))
+            self.assertEqual(rows[0]["step"], "site check")
+            self.assertEqual(rows[0]["name"], "Odd HTML Clinic")
+
+    def test_no_failures_no_file(self):
+        from pipeline.discover import DiscoverResult
+
+        with tempfile.TemporaryDirectory() as tmp:
+            batch = Batch.create(tmp, niche="x", area="y")
+            write_batch(batch, DiscoverResult(
+                rows=[], businesses=[{"name": "ok", "place_id": "OK1"}], excluded=[]))
+            self.assertFalse((batch.path / "lookup_errors.csv").is_file())

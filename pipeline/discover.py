@@ -197,31 +197,62 @@ def discover(
 
 
 def _enrich_one(business, site_checker, companies_house, site_contacts) -> None:
-    """All slow lookups for one business. Runs on a worker thread."""
+    """All slow lookups for one business. Runs on a worker thread.
+
+    The three lookups are independent, so each gets its own chance to fail.
+    They used to share one try: a site whose HTML broke the parser also
+    cost the business its Companies House owner and its website contact,
+    and the letter fell back to "FAO the Owner" for no reason connected to
+    who owns it. A failure is recorded against its step and the rest carry
+    on; the baseline values set before enrichment stay in place, so a
+    failed step never scores anything (fail open).
+    """
+    errors: dict[str, str] = {}
+
     if site_checker is not None:
-        check = site_checker.check(business.get("website"))
-        business["site_score"] = {
-            "verdict": check.verdict,
-            "mobile_score": check.mobile_score,
-            "https": check.https,
-            "viewport": check.viewport,
-        }
-        business["staleness"] = check.staleness or {}
+        try:
+            check = site_checker.check(business.get("website"))
+            business["site_score"] = {
+                "verdict": check.verdict,
+                "mobile_score": check.mobile_score,
+                "https": check.https,
+                "viewport": check.viewport,
+            }
+            business["staleness"] = check.staleness or {}
+        except Exception as exc:  # noqa: BLE001
+            errors["site check"] = _describe(exc)
 
     if companies_house is not None:
-        found = companies_house.lookup(
-            business.get("name") or "",
-            (business.get("address") or {}).get("postcode"),
-        )
-        business["owner"] = found["owner"]
-        business["company"] = found["company"]
+        try:
+            found = companies_house.lookup(
+                business.get("name") or "",
+                (business.get("address") or {}).get("postcode"),
+            )
+            business["owner"] = found["owner"]
+            business["company"] = found["company"]
+        except Exception as exc:  # noqa: BLE001
+            errors["owner lookup"] = _describe(exc)
 
     # Spec section 5, step 2: the business's own About page. Companies
     # House says who owns it; the website says who runs it.
     if site_contacts is not None and business.get("website"):
-        site_found = site_contacts.find(business["website"]) or {}
-        business["site_contact"] = site_found.get("contact")
-        business["site_emails"] = site_found.get("emails", [])
+        try:
+            site_found = site_contacts.find(business["website"]) or {}
+            business["site_contact"] = site_found.get("contact")
+            business["site_emails"] = site_found.get("emails", [])
+        except Exception as exc:  # noqa: BLE001
+            errors["website contact"] = _describe(exc)
+
+    if errors:
+        business["enrich_errors"] = errors
+    else:
+        business.pop("enrich_errors", None)
+
+
+def _describe(exc: Exception) -> str:
+    """One line a human can act on: the type and the first line of the text."""
+    text = str(exc).strip().splitlines()[0] if str(exc).strip() else ""
+    return f"{type(exc).__name__}: {text}"[:200] if text else type(exc).__name__
 
 
 def _enrich_all(
@@ -244,10 +275,12 @@ def _enrich_all(
         return
 
     def safely(business: dict) -> None:
+        # _enrich_one isolates its own steps; this outer guard is for a bug
+        # in that bookkeeping itself, so one business still cannot end a run.
         try:
             _enrich_one(business, site_checker, companies_house, site_contacts)
-        except Exception as exc:  # noqa: BLE001 — one bad site must not end the run
-            business["enrich_error"] = str(exc)
+        except Exception as exc:  # noqa: BLE001
+            business["enrich_errors"] = {"lookups": _describe(exc)}
 
     if workers <= 1 or len(pending) == 1:
         for business in pending:
@@ -327,6 +360,40 @@ def write_excluded(batch: Batch, excluded: list[dict]) -> Optional[Path]:
     return path
 
 
+LOOKUP_ERROR_COLUMNS = ["name", "step", "error", "website", "place_id"]
+
+
+def lookup_errors(businesses: Iterable[dict]) -> list[dict]:
+    """One row per failed step, across every business in the result."""
+    out = []
+    for b in businesses:
+        for step, error in (b.get("enrich_errors") or {}).items():
+            out.append({
+                "name": b.get("name") or "",
+                "step": step,
+                "error": error,
+                "website": b.get("website") or "",
+                "place_id": b.get("place_id") or "",
+            })
+    return out
+
+
+def write_lookup_errors(batch: Batch, businesses: list[dict]) -> Optional[Path]:
+    """lookup_errors.csv beside the shortlist. No failures, no file."""
+    import csv
+
+    rows = lookup_errors(businesses)
+    path = batch.path / "lookup_errors.csv"
+    if not rows:
+        path.unlink(missing_ok=True)
+        return None
+    with path.open("w", newline="", encoding="utf-8") as fh:
+        writer = csv.DictWriter(fh, fieldnames=LOOKUP_ERROR_COLUMNS)
+        writer.writeheader()
+        writer.writerows(rows)
+    return path
+
+
 def write_batch(batch: Batch, result: DiscoverResult) -> None:
     """Persist a discover result into a batch folder."""
     for business in result.businesses:
@@ -335,6 +402,7 @@ def write_batch(batch: Batch, result: DiscoverResult) -> None:
     # The exclusions are the answer to "where did X go?" — a question that
     # gets asked every time the rules tighten, so the list lives on disk.
     write_excluded(batch, result.excluded)
+    write_lookup_errors(batch, result.businesses)
     meta = batch.read_meta()
     meta["status_counts"] = {
         "shortlisted": len(result.businesses),

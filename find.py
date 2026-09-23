@@ -301,6 +301,25 @@ def main(argv=None) -> int:
             say("    the rules for a look: --keep-dormant, --keep-fine.")
         return 1
 
+    from pipeline.discover import lookup_errors
+
+    failed = lookup_errors(result.businesses)
+    if failed:
+        # These rows are in the shortlist with the step left blank rather
+        # than guessed — say so, or a missing owner reads as "none exists".
+        steps: dict[str, int] = {}
+        for f in failed:
+            steps[f["step"]] = steps.get(f["step"], 0) + 1
+        say("")
+        say(f"{len({f['place_id'] for f in failed})} business(es) had a lookup fail "
+            f"({', '.join(f'{n} {step}' for step, n in steps.items())}).")
+        say("They are still in the list, with that step left blank. Details in "
+            "lookup_errors.csv:")
+        for f in failed[:8]:
+            say(f"  {f['name'][:36]:<36}  {f['step']:<16} {f['error'][:60]}")
+        if len(failed) > 8:
+            say(f"  … and {len(failed) - 8} more")
+
     needs_human = [
         b for b in result.businesses
         if (b.get("addressee") or {}).get("needs_human")
