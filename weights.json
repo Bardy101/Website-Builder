@@ -22,7 +22,8 @@
     "too_few_reviews_max": 5,
     "recent_review_days": 90,
     "copyright_stale_years": 3,
-    "dormant_after_days": 365
+    "dormant_after_days": 365,
+    "min_site_points": 25
   },
   "exclude": {
     "non_operational": true,

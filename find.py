@@ -117,6 +117,12 @@ def parse_args(argv=None):
              "check (excluded by default — nothing to sell them)",
     )
     p.add_argument(
+        "--min-site-points", type=int, metavar="N",
+        help="a site needs at least N points of problems to be a prospect "
+             "(default from weights.json: 25 — one strong sign or two weak ones; "
+             "0 keeps any site with a single flaw)",
+    )
+    p.add_argument(
         "--dormant-days", type=int, metavar="N",
         help="treat a business as dormant after N days without a review "
              "(default from weights.json: 365)",
@@ -188,6 +194,8 @@ def main(argv=None) -> int:
         weights.exclude["site_fine"] = False
     if args.dormant_days:
         weights.thresholds["dormant_after_days"] = args.dormant_days
+    if args.min_site_points is not None:
+        weights.thresholds["min_site_points"] = args.min_site_points
     places, checker, ch, contacts, shots = build_clients(args, config)
     say = (lambda _m: None) if args.quiet else (lambda m: print(m, flush=True))
 

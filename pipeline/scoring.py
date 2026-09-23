@@ -79,6 +79,7 @@ class Weights:
                 "recent_review_days": 90,
                 "copyright_stale_years": 3,
                 "dormant_after_days": 365,
+                "min_site_points": 25,
             },
             exclude={
                 "non_operational": True,
@@ -112,6 +113,17 @@ def looks_like_chain(name: str, chain_names: list[str]) -> bool:
         if needle and needle in haystack:
             return True
     return False
+
+
+# Short words for each staleness flag, for exclusion details a human reads.
+_FLAG_WORDS = {
+    "no_viewport": "no mobile viewport",
+    "no_media_queries": "not responsive",
+    "copyright_stale": "old copyright year",
+    "table_layout": "table layout",
+    "no_https": "no HTTPS",
+    "flash": "Flash",
+}
 
 
 def dormancy(business: dict[str, Any], within_days: int) -> Optional[str]:
@@ -184,6 +196,24 @@ def score_business(business: dict[str, Any], weights: Weights) -> ScoreResult:
     # staleness check. "unknown" (the fetch failed) is not "fine" and stays.
     if weights.exclude.get("site_fine", False) and verdict == "fine":
         return ScoreResult(0, True, "site_fine", breakdown, "no staleness signals")
+
+    # Nor to one with too little wrong to sell a redesign on. One weak sign
+    # alone — most often a footer still saying (c) 2021 on an otherwise
+    # current site — used to put a good-looking site on the list as "poor".
+    # A measured site needs min_site_points of problems: one strong sign (no
+    # mobile viewport, 25) or two weaker ones (15 each) at the defaults.
+    # Only measured sites: an unknown verdict established nothing either way.
+    minimum = thr.get("min_site_points", 0)
+    stale = business.get("staleness") or {}
+    if (weights.exclude.get("site_fine", False) and minimum and stale.get("fetch_ok")
+            and verdict not in ("none", "social_only")):
+        flags = staleness_flags(stale, stale_years=thr.get("copyright_stale_years", 3))
+        found = [name for name, fired in flags.items() if fired]
+        points = sum(sig.get(name, 0) for name in found)
+        if points < minimum:
+            what = ", ".join(_FLAG_WORDS.get(n, n) for n in found) or "nothing"
+            return ScoreResult(0, True, "site_fine", breakdown,
+                               f"only {points} points wrong ({what}); needs {minimum}")
 
     if verdict == "none":
         breakdown["no_website"] = sig.get("no_website", 40)

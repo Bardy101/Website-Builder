@@ -151,6 +151,9 @@ class TestStalenessScoring(unittest.TestCase):
 
     def setUp(self):
         self.w = Weights.load(Path(__file__).resolve().parent.parent / "weights.json")
+        # These check what each signal is worth. The rule that drops a site
+        # with a single weak signal is selection, tested in TestMinSitePoints.
+        self.w.thresholds["min_site_points"] = 0
 
     def _score(self, mobile=None, **stale_overrides):
         b = business(
@@ -400,6 +403,60 @@ class TestSelectivity(unittest.TestCase):
         self.assertTrue(w.exclude.get("dormant"))
         self.assertTrue(w.exclude.get("site_fine"))
         self.assertEqual(w.thresholds.get("dormant_after_days"), 365)
+
+
+class TestMinSitePoints(unittest.TestCase):
+    """A good-looking site whose only flaw is a stale footer is not a prospect."""
+
+    def setUp(self):
+        self.w = Weights.load(Path(__file__).resolve().parent.parent / "weights.json")
+
+    def site(self, **stale_overrides):
+        from datetime import datetime, timedelta, timezone
+
+        recent = (datetime.now(timezone.utc) - timedelta(days=10)).strftime(
+            "%Y-%m-%dT00:00:00Z")
+        return score_business(business(
+            website="https://x.co.uk", site_score={"verdict": "poor"},
+            staleness=stale(**stale_overrides), reviews=[{"time": recent}]), self.w)
+
+    def test_stale_copyright_alone_is_excluded(self):
+        r = self.site(copyright_age=5)
+        self.assertTrue(r.excluded)
+        self.assertEqual(r.exclude_reason, "site_fine")
+        self.assertIn("old copyright year", r.exclude_detail)
+        self.assertIn("needs 25", r.exclude_detail)
+
+    def test_each_weak_sign_alone_is_excluded(self):
+        for over in ({"has_media_queries": False}, {"has_https": False},
+                     {"uses_table_layout": True}, {"has_flash": True}):
+            self.assertTrue(self.site(**over).excluded, over)
+
+    def test_no_viewport_alone_qualifies(self):
+        # Not built for phones: a real, sellable problem on its own.
+        self.assertFalse(self.site(has_viewport=False).excluded)
+
+    def test_two_weak_signs_qualify(self):
+        self.assertFalse(self.site(copyright_age=5, has_https=False).excluded)
+
+    def test_unmeasured_site_is_not_judged(self):
+        r = score_business(business(website="https://down.example",
+                                    site_score={"verdict": "unknown"},
+                                    staleness={"fetch_ok": False}), self.w)
+        self.assertFalse(r.excluded)
+
+    def test_no_website_is_never_caught_by_it(self):
+        self.assertFalse(score_business(business(), self.w).excluded)
+
+    def test_keep_fine_switches_it_off(self):
+        self.w.exclude["site_fine"] = False
+        self.assertFalse(self.site(copyright_age=5).excluded)
+
+    def test_threshold_is_configurable(self):
+        self.w.thresholds["min_site_points"] = 15
+        self.assertFalse(self.site(copyright_age=5).excluded)
+        self.w.thresholds["min_site_points"] = 40
+        self.assertTrue(self.site(copyright_age=5, has_https=False).excluded)
 
 
 if __name__ == "__main__":
