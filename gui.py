@@ -40,6 +40,39 @@ except ImportError as exc:
 
 APP_TITLE = "Postal Outreach — prospect finder"
 
+# The design, in one place. Every colour the window uses comes from here, so
+# a change of mind is one edit rather than a hunt. Soft tints carry state
+# (kept, culled, warning) and the one accent marks what you can act on.
+PALETTE = {
+    "bg": "#f3f4f6",          # window
+    "surface": "#ffffff",     # cards, tables, fields
+    "subtle": "#eef1f5",      # table headings, hover
+    "border": "#d6dbe1",
+    "text": "#1d2127",
+    "muted": "#5d6673",
+    "accent": "#2b5b84",      # primary action, selection
+    "accent_hover": "#1f4768",
+    "accent_soft": "#e4edf6",
+    "good": "#1a7f37",
+    "good_soft": "#e6f4ea",
+    "bad": "#b42318",
+    "bad_soft": "#fbe9e8",
+    "warn": "#8a5300",
+    "warn_soft": "#fff3dc",
+    "header": "#1f2d3d",      # the title strip
+    "log_bg": "#1b1f24",
+    "log_text": "#d6dae0",
+    "log_err": "#ff8a80",
+    "log_ok": "#7ee2a8",
+}
+
+TONES = {  # verdict tone -> (background, text) for the chip
+    "good": ("good_soft", "good"),
+    "ok": ("warn_soft", "warn"),
+    "bad": ("bad_soft", "bad"),
+    "muted": ("subtle", "muted"),
+}
+
 
 # -- command builders (pure: no window, no side effects) ---------------------
 
@@ -187,6 +220,39 @@ def pairs_for_run(
     wanted = {(n.lower(), a.lower()) for n, a in listed}
     left_out = bool(niche and area) and (niche.lower(), area.lower()) not in wanted
     return list(listed), left_out
+
+
+# Short forms, so a status fits its column: the full code is in the pane.
+SHORT_REASONS = {"chain_or_franchise": "chain", "non_operational": "closed",
+                 "no_owner_signal": "no owner", "winding_down": "winding down",
+                 "wrong_niche": "wrong niche"}
+
+
+def status_text(decision: str, reason: str, *, excluded: bool = False) -> str:
+    """One column for the decision and its reason: '✓ kept', '✗ chain'."""
+    raw = (reason or "").replace(" ", "_")
+    reason = SHORT_REASONS.get(raw, raw).replace("_", " ")
+    if excluded:
+        return f"⊘ {reason}" if reason else "⊘ excluded"
+    if decision == "keep":
+        return "✓ kept"
+    if decision == "cull":
+        return f"✗ {reason}" if reason else "✗ culled"
+    return ""
+
+
+def log_tag(line: str) -> tuple:
+    """Colour for a line of tool output: failures red, completion green."""
+    text = line.strip()
+    lowered = text.lower()
+    if (text.startswith("Traceback") or "error:" in lowered or " failed" in lowered
+            or text.startswith("[stopped]") or "exit code 1" in lowered
+            or text.startswith("! ") or "could not" in lowered):
+        return ("err",)
+    if text == "[finished with exit code 0]" or lowered.startswith("saved ") \
+            or ": saved " in lowered:
+        return ("ok",)
+    return ()
 
 
 def batch_summary(folder: Path) -> dict:
@@ -378,10 +444,7 @@ def build_app():
             self.title(APP_TITLE)
             self.geometry("1180x860")
             self.minsize(900, 600)
-            try:
-                ttk.Style(self).theme_use("vista" if os.name == "nt" else "clam")
-            except tk.TclError:
-                pass
+            self._apply_theme()
             self.config_obj = Config.from_env()
             self.runner = Runner(self._log_line, self._run_finished)
             self._after_run: Optional[Callable[[int], None]] = None
@@ -399,39 +462,200 @@ def build_app():
                 self._log_line("No Places key set — searches will use the demo data. "
                                "Add keys on the Setup tab.")
 
+        # -- design ---------------------------------------------------------
+
+        def _apply_theme(self) -> None:
+            """One look on every platform.
+
+            The native Windows theme ("vista") ignores most colour settings,
+            so a designed look means a styleable base — "clam" — with the
+            palette laid over it. The same code renders the same window on
+            Windows, macOS and Linux; only the font family differs.
+            """
+            from tkinter import font as tkfont
+
+            c = PALETTE
+            style = ttk.Style(self)
+            try:
+                style.theme_use("clam")
+            except tk.TclError:
+                return
+
+            base = tkfont.nametofont("TkDefaultFont")
+            family = "Segoe UI" if os.name == "nt" else base.actual("family")
+            base.configure(family=family, size=10)
+            for name in ("TkTextFont", "TkMenuFont", "TkHeadingFont"):
+                try:
+                    tkfont.nametofont(name).configure(family=family, size=10)
+                except tk.TclError:
+                    pass
+            self.fonts = {
+                "base": (family, 10),
+                "small": (family, 9),
+                "bold": (family, 10, "bold"),
+                "h2": (family, 11, "bold"),
+                "title": (family, 16, "bold"),
+                "brand": (family, 13, "bold"),
+                "mono": ("Consolas" if os.name == "nt" else "DejaVu Sans Mono", 10),
+            }
+            self.configure(background=c["bg"])
+
+            style.configure(".", background=c["bg"], foreground=c["text"],
+                            bordercolor=c["border"], darkcolor=c["bg"],
+                            lightcolor=c["bg"], troughcolor=c["subtle"],
+                            focuscolor=c["accent"], font=self.fonts["base"])
+            style.configure("TFrame", background=c["bg"])
+            style.configure("Card.TFrame", background=c["surface"])
+            style.configure("TLabel", background=c["bg"], foreground=c["text"])
+            style.configure("Muted.TLabel", foreground=c["muted"])
+            style.configure("Small.TLabel", foreground=c["muted"], font=self.fonts["small"])
+            style.configure("H2.TLabel", font=self.fonts["h2"])
+            for variant, extra in (("Card", {}),
+                                   ("CardMuted", {"foreground": c["muted"]}),
+                                   ("CardSmall", {"foreground": c["muted"],
+                                                  "font": self.fonts["small"]}),
+                                   ("CardBold", {"font": self.fonts["bold"]}),
+                                   ("CardH2", {"font": self.fonts["h2"]}),
+                                   ("CardTitle", {"font": self.fonts["title"]})):
+                style.configure(f"{variant}.TLabel", background=c["surface"], **extra)
+
+            # Buttons: quiet by default, one filled accent for the main action.
+            style.configure("TButton", background=c["surface"], foreground=c["text"],
+                            bordercolor=c["border"], lightcolor=c["surface"],
+                            darkcolor=c["surface"], padding=(12, 5), relief="solid",
+                            borderwidth=1)
+            style.map("TButton",
+                      background=[("disabled", c["bg"]), ("pressed", c["subtle"]),
+                                  ("active", c["subtle"])],
+                      foreground=[("disabled", c["muted"])],
+                      bordercolor=[("focus", c["accent"])])
+            for name, bg, fg, hover in (
+                ("Accent", c["accent"], "#ffffff", c["accent_hover"]),
+                ("Keep", c["good_soft"], c["good"], "#d3ecd9"),
+                ("Cull", c["bad_soft"], c["bad"], "#f6d5d2"),
+            ):
+                style.configure(f"{name}.TButton", background=bg, foreground=fg,
+                                bordercolor=bg, lightcolor=bg, darkcolor=bg,
+                                font=self.fonts["bold"], padding=(14, 6))
+                style.map(f"{name}.TButton",
+                          background=[("disabled", "#b7c3cf"), ("pressed", hover),
+                                      ("active", hover)],
+                          foreground=[("disabled", "#ffffff")],
+                          bordercolor=[("active", hover), ("focus", c["accent"])])
+
+            style.configure("TEntry", fieldbackground=c["surface"], padding=5,
+                            bordercolor=c["border"], lightcolor=c["surface"])
+            style.map("TEntry", bordercolor=[("focus", c["accent"])],
+                      lightcolor=[("focus", c["accent"])])
+            style.configure("TCombobox", fieldbackground=c["surface"], padding=4,
+                            background=c["surface"], arrowcolor=c["muted"],
+                            bordercolor=c["border"])
+            style.map("TCombobox", fieldbackground=[("readonly", c["surface"])],
+                      bordercolor=[("focus", c["accent"])],
+                      selectbackground=[("readonly", c["surface"])],
+                      selectforeground=[("readonly", c["text"])])
+            style.configure("TSpinbox", fieldbackground=c["surface"], padding=4,
+                            arrowcolor=c["muted"], bordercolor=c["border"])
+            style.configure("TCheckbutton", background=c["bg"], padding=2)
+            style.map("TCheckbutton", background=[("active", c["bg"])],
+                      indicatorcolor=[("selected", c["accent"]), ("!selected", c["surface"])])
+            style.configure("Card.TCheckbutton", background=c["surface"])
+            style.map("Card.TCheckbutton", background=[("active", c["surface"])])
+            style.configure("TLabelframe", background=c["bg"], bordercolor=c["border"],
+                            relief="solid", borderwidth=1, padding=10)
+            style.configure("TLabelframe.Label", background=c["bg"],
+                            foreground=c["text"], font=self.fonts["h2"])
+            style.configure("TSeparator", background=c["border"])
+            style.configure("TPanedwindow", background=c["bg"])
+            style.configure("Sash", sashthickness=6, gripcount=0)
+
+            style.configure("TNotebook", background=c["bg"], borderwidth=0,
+                            tabmargins=(10, 8, 10, 0))
+            style.configure("TNotebook.Tab", background=c["bg"], foreground=c["muted"],
+                            padding=(18, 8), borderwidth=0, font=self.fonts["bold"])
+            style.map("TNotebook.Tab",
+                      expand=[("selected", (0, 0, 0, 0))],
+                      background=[("selected", c["surface"]), ("active", c["subtle"])],
+                      foreground=[("selected", c["accent"])],
+                      lightcolor=[("selected", c["surface"])])
+
+            # Tables: taller rows, flat headings, a selection you can't miss.
+            style.configure("Treeview", background=c["surface"], foreground=c["text"],
+                            fieldbackground=c["surface"], rowheight=28, borderwidth=0,
+                            relief="flat")
+            style.map("Treeview", background=[("selected", c["accent"])],
+                      foreground=[("selected", "#ffffff")])
+            # Normal weight on purpose: every table's column widths were set
+            # for this font, and bold headings clipped "Found" to "Foun".
+            style.configure("Treeview.Heading", background=c["subtle"],
+                            foreground=c["muted"], relief="flat",
+                            font=self.fonts["base"], padding=(4, 5))
+            style.map("Treeview.Heading", background=[("active", c["border"])])
+            style.configure("Vertical.TScrollbar", background=c["subtle"],
+                            troughcolor=c["bg"], bordercolor=c["bg"],
+                            arrowcolor=c["muted"], gripcount=0)
+            style.configure("Horizontal.TScrollbar", background=c["subtle"],
+                            troughcolor=c["bg"], bordercolor=c["bg"],
+                            arrowcolor=c["muted"], gripcount=0)
+
+        def chip(self, parent, text: str, tone: str = "muted") -> "tk.Label":
+            """A small rounded-looking tag. Plain tk.Label: ttk won't take an
+            arbitrary background per widget without a style per colour."""
+            bg, fg = TONES.get(tone, TONES["muted"])
+            return tk.Label(parent, text=text, bg=PALETTE[bg], fg=PALETTE[fg],
+                            font=self.fonts["bold"], padx=8, pady=2)
+
         # -- layout ---------------------------------------------------------
 
         def _build(self) -> None:
+            c = PALETTE
+            # Title strip: says what this is and gives the eye an anchor.
+            head = tk.Frame(self, bg=c["header"], height=46)
+            head.pack(fill=tk.X)
+            head.pack_propagate(False)
+            tk.Label(head, text="Postal Outreach", bg=c["header"], fg="#ffffff",
+                     font=self.fonts["brand"]).pack(side=tk.LEFT, padx=(18, 8))
+            tk.Label(head, text="prospect finder", bg=c["header"], fg="#9fb0c3",
+                     font=self.fonts["base"]).pack(side=tk.LEFT)
+            self.head_status = tk.Label(head, text="", bg=c["header"], fg="#9fb0c3",
+                                        font=self.fonts["small"])
+            self.head_status.pack(side=tk.RIGHT, padx=18)
+
             outer = ttk.PanedWindow(self, orient=tk.VERTICAL)
             outer.pack(fill=tk.BOTH, expand=True)
 
             self.tabs = ttk.Notebook(outer)
-            self.tab_find = ttk.Frame(self.tabs, padding=10)
-            self.tab_review = ttk.Frame(self.tabs, padding=10)
-            self.tab_batches = ttk.Frame(self.tabs, padding=10)
-            self.tab_setup = ttk.Frame(self.tabs, padding=10)
-            self.tabs.add(self.tab_find, text="  Find prospects  ")
-            self.tabs.add(self.tab_review, text="  Shortlist  ")
-            self.tabs.add(self.tab_batches, text="  Batches  ")
-            self.tabs.add(self.tab_setup, text="  Setup  ")
+            self.tab_find = ttk.Frame(self.tabs, padding=14)
+            self.tab_review = ttk.Frame(self.tabs, padding=(14, 12, 14, 10))
+            self.tab_batches = ttk.Frame(self.tabs, padding=14)
+            self.tab_setup = ttk.Frame(self.tabs, padding=14)
+            self.tabs.add(self.tab_find, text="Find prospects")
+            self.tabs.add(self.tab_review, text="Shortlist")
+            self.tabs.add(self.tab_batches, text="Batches")
+            self.tabs.add(self.tab_setup, text="Setup")
             outer.add(self.tabs, weight=4)
 
-            log_frame = ttk.Frame(outer, padding=(10, 4, 10, 6))
+            log_frame = ttk.Frame(outer, padding=(14, 6, 14, 10))
             outer.add(log_frame, weight=1)
             bar = ttk.Frame(log_frame)
             bar.pack(fill=tk.X)
-            ttk.Label(bar, text="Output").pack(side=tk.LEFT)
-            self.status = ttk.Label(bar, text="Ready", foreground="#555")
+            ttk.Label(bar, text="Output", style="H2.TLabel").pack(side=tk.LEFT)
+            self.status = ttk.Label(bar, text="Ready", style="Muted.TLabel")
             self.status.pack(side=tk.LEFT, padx=12)
             self.btn_stop = ttk.Button(bar, text="Stop", command=self.stop_run,
                                        state=tk.DISABLED)
             self.btn_stop.pack(side=tk.RIGHT)
             ttk.Button(bar, text="Clear", command=self.clear_log).pack(
                 side=tk.RIGHT, padx=(0, 6))
-            self.log = tk.Text(log_frame, height=12, wrap=tk.NONE,
-                               font=("Consolas" if os.name == "nt" else "Monospace", 10),
-                               state=tk.DISABLED, background="#1e1e1e",
-                               foreground="#d4d4d4", insertbackground="#d4d4d4")
+            self.log = tk.Text(log_frame, height=8, wrap=tk.NONE,
+                               font=self.fonts["mono"], relief="flat",
+                               borderwidth=0, padx=10, pady=8,
+                               state=tk.DISABLED, background=c["log_bg"],
+                               foreground=c["log_text"], insertbackground=c["log_text"])
+            # Failures and successes in colour, so they don't scroll past as
+            # just more grey text.
+            self.log.tag_configure("err", foreground=c["log_err"])
+            self.log.tag_configure("ok", foreground=c["log_ok"])
             scroll = ttk.Scrollbar(log_frame, command=self.log.yview)
             self.log.configure(yscrollcommand=scroll.set)
             self.log.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, pady=(4, 0))
@@ -448,7 +672,7 @@ def build_app():
             def place_sash() -> None:
                 height = outer.winfo_height()
                 if height > 1:
-                    outer.sashpos(0, int(height * 0.72))
+                    outer.sashpos(0, int(height * 0.79))
 
             self.after_idle(place_sash)
 
@@ -497,7 +721,12 @@ def build_app():
             pair_bar.grid(row=6, column=0, columnspan=2, sticky="ew", pady=(0, 2))
             ttk.Button(pair_bar, text="Add to this run", command=self.add_pair).pack(side=tk.LEFT)
             ttk.Button(pair_bar, text="Remove", command=self.remove_pair).pack(side=tk.LEFT, padx=6)
-            self.pairs = tk.Listbox(left, height=4, exportselection=False)
+            self.pairs = tk.Listbox(left, height=3, exportselection=False,
+                                    relief="flat", borderwidth=0, highlightthickness=1,
+                                    highlightbackground=PALETTE["border"],
+                                    highlightcolor=PALETTE["accent"],
+                                    background=PALETTE["surface"],
+                                    selectbackground=PALETTE["accent"])
             self.pairs.grid(row=7, column=0, columnspan=2, sticky="ew")
 
             ttk.Label(left, text="Searches you have already paid for — click one to reuse it "
@@ -571,139 +800,460 @@ def build_app():
             go.grid(row=1, column=1, sticky="sew")
             self.cost = ttk.Label(go, text="", foreground="#1a7f37", wraplength=380)
             self.cost.pack(anchor="w", pady=(0, 6))
-            self.btn_find = ttk.Button(go, text="Find prospects", command=self.run_find)
+            self.btn_find = ttk.Button(go, text="Find prospects", style="Accent.TButton",
+                                       command=self.run_find)
             self.btn_find.pack(anchor="e", ipadx=12, ipady=4)
             for w in (self.niche, self.area, self.radius):
                 w.bind("<KeyRelease>", lambda _e: self.update_cost())
                 w.bind("<<ComboboxSelected>>", lambda _e: self.update_cost())
 
         # -- shortlist tab ----------------------------------------------------
+        #
+        # The list on the left, the business on the right. Everything the
+        # spreadsheet used to be opened for — contact details, who to write
+        # to, the site evidence, why it scored what it did — is in the pane,
+        # with the screenshots, so reviewing a batch never leaves the window.
 
-        # What the sheet shows, and how wide. Decision first: it is the column
-        # you are here to change, and the eye should land on it.
+        # What the table shows, and how wide. The pane holds the rest, so the
+        # table stays narrow enough never to need scrolling sideways.
         REVIEW_COLUMNS = [
-            ("decision", "", 34, "center"),
-            ("lead_score", "Score", 68, "e"),
-            ("name", "Business", 210, "w"),
-            ("town", "Town", 100, "w"),
-            ("site_verdict", "Site", 100, "w"),
-            ("staleness_points", "Stale", 66, "e"),
-            ("review_count", "Reviews", 86, "e"),
-            ("recent_review_date", "Last review", 116, "w"),
-            ("address_to", "Address to", 150, "w"),
-            ("reason", "Cull reason", 124, "w"),
-            ("notes", "Notes", 200, "w"),
+            ("decision", "Status", 118, "w"),
+            ("lead_score", "Score", 62, "e"),
+            ("name", "Business", 170, "w"),
+            ("town", "Town", 92, "w"),
+            ("site_verdict", "Website", 132, "w"),
+            ("review_count", "Reviews", 70, "e"),
         ]
-        EDITABLE_COLUMNS = {"address_to", "notes"}
+        MARKS = {"keep": "✓", "cull": "✗", "": "·"}
+        FILTERS = ["Everything", "Not yet decided", "Keeps", "Culls",
+                   "Excluded by the rules"]
 
         def _build_review(self) -> None:
             from pipeline.cull import REASON_CODES
 
+            c = PALETTE
             self.reason_codes = list(REASON_CODES)
             self.sheet = None
             self.review_batch: Optional[Path] = None
             self.review_dirty = False
-            self._editor = None
+            self.excluded_rows: list = []
+            self._records: dict[str, dict] = {}
+            self._thumbs: dict[str, tuple] = {}
+            self._detail_row = None
+            self._filling_detail = False
 
             f = self.tab_review
             f.columnconfigure(0, weight=1)
             f.rowconfigure(2, weight=1)
 
-            # Row 0: which batch, and where it stands.
+            # Row 0: which batch, where it stands, and the one button that
+            # matters most.
             top = ttk.Frame(f)
             top.grid(row=0, column=0, sticky="ew")
-            ttk.Label(top, text="Batch").pack(side=tk.LEFT)
-            self.review_pick = ttk.Combobox(top, state="readonly", width=44)
-            self.review_pick.pack(side=tk.LEFT, padx=(6, 8))
+            ttk.Label(top, text="Batch", style="H2.TLabel").pack(side=tk.LEFT)
+            self.review_pick = ttk.Combobox(top, state="readonly", width=36)
+            self.review_pick.pack(side=tk.LEFT, padx=(8, 8))
             self.review_pick.bind("<<ComboboxSelected>>", lambda _e: self.load_review())
-            ttk.Button(top, text="Reload from disk",
-                       command=self.reload_review).pack(side=tk.LEFT)
-            ttk.Button(top, text="Open in spreadsheet",
-                       command=self.open_review_csv).pack(side=tk.LEFT, padx=6)
-            self.review_counts = ttk.Label(top, text="", foreground="#333")
-            self.review_counts.pack(side=tk.LEFT, padx=12)
+            ttk.Button(top, text="Reload", command=self.reload_review).pack(side=tk.LEFT)
+            self.review_counts = tk.Frame(top, bg=c["bg"])
+            self.review_counts.pack(side=tk.LEFT, padx=14)
+            self.review_save = ttk.Button(top, text="Save decisions",
+                                          style="Accent.TButton",
+                                          command=self.save_review)
+            self.review_save.pack(side=tk.RIGHT)
 
             # Row 1: narrowing the list down.
             bar = ttk.Frame(f)
-            bar.grid(row=1, column=0, sticky="ew", pady=(8, 4))
+            bar.grid(row=1, column=0, sticky="ew", pady=(10, 8))
             ttk.Label(bar, text="Show").pack(side=tk.LEFT)
-            self.review_filter = ttk.Combobox(
-                bar, state="readonly", width=16,
-                values=["Everything", "Not yet decided", "Keeps", "Culls"])
+            self.review_filter = ttk.Combobox(bar, state="readonly", width=20,
+                                              values=self.FILTERS)
             self.review_filter.set("Everything")
-            self.review_filter.pack(side=tk.LEFT, padx=(6, 12))
+            self.review_filter.pack(side=tk.LEFT, padx=(6, 14))
             self.review_filter.bind("<<ComboboxSelected>>", lambda _e: self.fill_review())
             ttk.Label(bar, text="Find").pack(side=tk.LEFT)
-            self.review_search = ttk.Entry(bar, width=26)
+            self.review_search = ttk.Entry(bar, width=24)
             self.review_search.pack(side=tk.LEFT, padx=6)
             self.review_search.bind("<KeyRelease>", lambda _e: self.fill_review())
-            ttk.Label(bar, text="name, town or notes", foreground="#666").pack(side=tk.LEFT)
-            # On this row, not the top one: the batch picker and counts fill
-            # that, and the conflict message is long enough to be clipped.
-            self.review_dirty_label = ttk.Label(bar, text="", foreground="#b35c00")
-            self.review_dirty_label.pack(side=tk.RIGHT)
+            ttk.Label(bar, text="name, town or notes", style="Small.TLabel").pack(side=tk.LEFT)
+            # The spreadsheet is optional now; its button sits out of the way.
+            ttk.Button(bar, text="Open as CSV", command=self.open_review_csv).pack(
+                side=tk.RIGHT)
+            self.review_dirty_label = ttk.Label(bar, text="", foreground=c["warn"],
+                                                font=self.fonts["bold"])
+            self.review_dirty_label.pack(side=tk.RIGHT, padx=12)
 
-            # Row 2: the sheet.
-            wrap = ttk.Frame(f)
-            wrap.grid(row=2, column=0, sticky="nsew")
-            wrap.columnconfigure(0, weight=1)
-            wrap.rowconfigure(0, weight=1)
-            cols = [c[0] for c in self.REVIEW_COLUMNS]
-            self.review_tree = ttk.Treeview(wrap, columns=cols, show="headings",
+            # Row 2: list | business, side by side and resizable.
+            split = ttk.PanedWindow(f, orient=tk.HORIZONTAL)
+            split.grid(row=2, column=0, sticky="nsew")
+
+            left = ttk.Frame(split)
+            left.columnconfigure(0, weight=1)
+            left.rowconfigure(0, weight=1)
+            cols = [col[0] for col in self.REVIEW_COLUMNS]
+            self.review_tree = ttk.Treeview(left, columns=cols, show="headings",
                                             selectmode="extended")
             for key, title, width, anchor in self.REVIEW_COLUMNS:
                 self.review_tree.heading(
                     key, text=title, command=lambda k=key: self.sort_review(k))
                 self.review_tree.column(key, width=width, minwidth=width,
-                                        anchor=anchor, stretch=key in ("name", "notes"))
-            self.review_tree.column("name", minwidth=120)
-            self.review_tree.column("notes", minwidth=90)
+                                        anchor=anchor, stretch=key == "name")
+            self.review_tree.column("name", minwidth=130)
             self.review_tree.grid(row=0, column=0, sticky="nsew")
-            vsb = ttk.Scrollbar(wrap, command=self.review_tree.yview)
+            vsb = ttk.Scrollbar(left, command=self.review_tree.yview)
             self.review_tree.configure(yscrollcommand=vsb.set)
             vsb.grid(row=0, column=1, sticky="ns")
-            hsb = ttk.Scrollbar(wrap, orient=tk.HORIZONTAL, command=self.review_tree.xview)
-            self.review_tree.configure(xscrollcommand=hsb.set)
-            hsb.grid(row=1, column=0, sticky="ew")
 
-            # A kept row should read as settled and a culled one as struck
-            # out, at a glance, without reading the first column.
-            self.review_tree.tag_configure("keep", background="#eaf6ec")
-            self.review_tree.tag_configure("cull", background="#f2f2f2",
-                                           foreground="#8a8a8a")
-            self.review_tree.tag_configure("todo", background="#ffffff")
+            # Kept rows read as settled, culled as struck out, at a glance.
+            self.review_tree.tag_configure("keep", background=c["good_soft"])
+            self.review_tree.tag_configure("cull", background="#f4f4f5",
+                                           foreground="#9aa1ab")
+            self.review_tree.tag_configure("todo", background=c["surface"])
+            self.review_tree.tag_configure("excluded", background="#fafafa",
+                                           foreground=c["muted"])
 
-            self.review_tree.bind("<Double-1>", self.begin_edit)
+            self.review_tree.bind("<<TreeviewSelect>>", lambda _e: self.show_detail())
+            self.review_tree.bind("<Double-1>", lambda _e: self._focus_letter_to())
             self.review_tree.bind("<Return>", lambda _e: self.mark(review_mod.KEEP))
-            self.review_tree.bind("k", lambda _e: self.mark(review_mod.KEEP))
-            self.review_tree.bind("c", lambda _e: self.mark(review_mod.CULL))
-            self.review_tree.bind("u", lambda _e: self.mark(review_mod.UNDECIDED))
+            for key, decision in (("k", review_mod.KEEP), ("c", review_mod.CULL),
+                                  ("u", review_mod.UNDECIDED)):
+                self.review_tree.bind(key, lambda _e, d=decision: self.mark(d))
 
-            # Row 3: what to do about the selection.
-            act = ttk.Frame(f)
-            act.grid(row=3, column=0, sticky="ew", pady=(8, 0))
-            ttk.Label(act, text="Selected rows:").pack(side=tk.LEFT)
-            ttk.Button(act, text="Keep  (k)",
-                       command=lambda: self.mark(review_mod.KEEP)).pack(side=tk.LEFT, padx=(8, 4))
-            ttk.Button(act, text="Cull  (c)",
-                       command=lambda: self.mark(review_mod.CULL)).pack(side=tk.LEFT, padx=4)
-            ttk.Button(act, text="Undecide  (u)",
-                       command=lambda: self.mark(review_mod.UNDECIDED)).pack(side=tk.LEFT, padx=4)
-            ttk.Label(act, text="reason").pack(side=tk.LEFT, padx=(16, 4))
-            self.review_reason = ttk.Combobox(act, state="readonly", width=17,
+            # Under the list: act on the selection (works on several rows).
+            act = ttk.Frame(left)
+            act.grid(row=1, column=0, columnspan=2, sticky="ew", pady=(10, 0))
+            self.act_bar = act
+            ttk.Button(act, text="✓  Keep", style="Keep.TButton",
+                       command=lambda: self.mark(review_mod.KEEP)).pack(side=tk.LEFT)
+            ttk.Button(act, text="✗  Cull", style="Cull.TButton",
+                       command=lambda: self.mark(review_mod.CULL)).pack(side=tk.LEFT, padx=6)
+            ttk.Label(act, text="as").pack(side=tk.LEFT, padx=(2, 4))
+            self.review_reason = ttk.Combobox(act, state="readonly", width=16,
                                               values=self.reason_codes)
             self.review_reason.set(self.reason_codes[0])
             self.review_reason.pack(side=tk.LEFT)
-            self.review_reason.bind("<<ComboboxSelected>>",
-                                    lambda _e: self.apply_reason())
-            self.review_save = ttk.Button(act, text="Save decisions",
-                                          command=self.save_review)
-            self.review_save.pack(side=tk.RIGHT, ipadx=8)
+            self.review_reason.bind("<<ComboboxSelected>>", lambda _e: self.apply_reason())
+            ttk.Button(act, text="Undecide", command=lambda: self.mark(
+                review_mod.UNDECIDED)).pack(side=tk.LEFT, padx=6)
+            self.review_hint = ttk.Label(left, text="", style="Small.TLabel",
+                                         wraplength=560, justify="left")
+            self.review_hint.grid(row=2, column=0, columnspan=2, sticky="w", pady=(6, 0))
+            split.add(left, weight=3)
 
-            ttk.Label(f, text="Double-click 'Address to' or 'Notes' to edit. "
-                      "Culling needs a reason code — that is what tune.py learns from. "
-                      "Rows you never touch count as keeps.",
-                      foreground="#666").grid(row=4, column=0, sticky="w", pady=(6, 0))
+            # The business pane.
+            holder, self.detail = self._scrollable(split, width=440, bg=c["surface"])
+            self.detail_holder = holder
+            split.add(holder, weight=2)
+            self._pane_last_width = 0
+
+            def pane_resized(event) -> None:
+                if abs(event.width - self._pane_last_width) < 24:
+                    return
+                self._pane_last_width = event.width
+                if getattr(self, "_pane_redraw", None):
+                    self.after_cancel(self._pane_redraw)
+                self._pane_redraw = self.after(180, self.show_detail)
+
+            holder.bind("<Configure>", pane_resized, add="+")
+            self._build_detail_placeholder()
+
+            def place_split() -> None:
+                width = split.winfo_width()
+                if width > 1:
+                    split.sashpos(0, int(width * 0.56))
+
+            self.after_idle(place_split)
+            self.bind_all("<Control-s>", lambda _e: self.save_review())
+
+        # -- shortlist: the business pane --------------------------------------
+
+        def _clear_detail(self) -> None:
+            for child in self.detail.winfo_children():
+                child.destroy()
+
+        def _build_detail_placeholder(self, text: str = "") -> None:
+            self._clear_detail()
+            self._detail_row = None
+            msg = text or ("Pick a business on the left to see it here — its "
+                           "website, who to write to, and why it scored what it did.")
+            ttk.Label(self.detail, text=msg, style="CardMuted.TLabel",
+                      wraplength=360, justify="left").pack(anchor="w", padx=20, pady=24)
+
+        def _record(self, place_id: str) -> dict:
+            """business.json for a row, read once per load."""
+            if place_id not in self._records and self.review_batch is not None:
+                try:
+                    self._records[place_id] = Batch(self.review_batch).read_business(place_id) or {}
+                except Exception:  # noqa: BLE001 — a bad record must not blank the pane
+                    self._records[place_id] = {}
+            return self._records.get(place_id, {})
+
+        def _current_row(self):
+            focus = self.review_tree.focus() or next(iter(self.review_tree.selection()), "")
+            if not focus:
+                return None
+            if self.sheet is not None:
+                row = self.sheet.by_id(focus)
+                if row is not None:
+                    return row
+            return next((r for r in self.excluded_rows if r.place_id == focus), None)
+
+        def show_detail(self) -> None:
+            """Draw the business pane for the focused row."""
+            self._commit_detail()
+            row = self._current_row()
+            if row is None:
+                self._build_detail_placeholder()
+                return
+            from pipeline import details as details_mod
+
+            excluded = getattr(row, "excluded", None)
+            record = {} if excluded else self._record(row.place_id)
+            info = details_mod.build(row.row, record, excluded=excluded)
+            self._draw_detail(row, info, editable=excluded is None)
+
+        def _draw_detail(self, row, info, *, editable: bool) -> None:
+            c = PALETTE
+            self._clear_detail()
+            self.detail_holder.scroll_top()
+            self._detail_row = row
+            pad = {"padx": 20}
+            d = self.detail
+
+            # Header: who, where, and the three things you judge first.
+            ttk.Label(d, text=info.name, style="CardTitle.TLabel",
+                      wraplength=self._pane_width(), justify="left").pack(anchor="w", pady=(18, 0), **pad)
+            if info.subtitle:
+                ttk.Label(d, text=info.subtitle, style="CardMuted.TLabel").pack(
+                    anchor="w", **pad)
+            chips = tk.Frame(d, bg=c["surface"])
+            chips.pack(anchor="w", pady=(10, 0), **pad)
+            if info.score:
+                self.chip(chips, f"Score {info.score}", "muted").pack(side=tk.LEFT)
+            self.chip(chips, info.verdict_label, info.verdict_tone).pack(side=tk.LEFT, padx=6)
+            if editable:
+                label = {"keep": ("Kept", "good"), "cull": (
+                    f"Culled — {row.reason.replace('_', ' ')}" if row.reason else "Culled", "bad")
+                         }.get(row.decision, ("Not decided", "ok"))
+                self.chip(chips, label[0], label[1]).pack(side=tk.LEFT)
+
+            for warning in info.warnings:
+                box = tk.Label(d, text=warning, bg=c["warn_soft"], fg=c["warn"],
+                               font=self.fonts["small"], wraplength=self._pane_width() - 24,
+                               justify="left",
+                               anchor="w", padx=10, pady=6)
+                box.pack(fill=tk.X, pady=(10, 0), **pad)
+
+            # The website, as a visitor sees it.
+            self._draw_screens(d, row, info)
+
+            links = tk.Frame(d, bg=c["surface"])
+            links.pack(anchor="w", pady=(8, 0), **pad)
+            if info.website:
+                ttk.Button(links, text="Open website",
+                           command=lambda: self._open_url(info.website)).pack(side=tk.LEFT)
+            if info.maps_url:
+                ttk.Button(links, text="Google Maps",
+                           command=lambda: self._open_url(info.maps_url)).pack(side=tk.LEFT, padx=6)
+
+            if editable:
+                # Decide on this one, right here.
+                decide = tk.Frame(d, bg=c["surface"])
+                decide.pack(anchor="w", pady=(16, 0), **pad)
+                ttk.Button(decide, text="✓  Keep", style="Keep.TButton",
+                           command=lambda: self.mark(review_mod.KEEP, rows=[row])).pack(side=tk.LEFT)
+                ttk.Button(decide, text="✗  Cull", style="Cull.TButton",
+                           command=lambda: self.mark(review_mod.CULL, rows=[row])).pack(
+                    side=tk.LEFT, padx=6)
+                ttk.Label(decide, text=f"as “{self.review_reason.get().replace('_', ' ')}”",
+                          style="CardSmall.TLabel").pack(side=tk.LEFT, padx=4)
+
+                # Yours to edit: the two fields that aren't measurements.
+                ttk.Label(d, text="Letter to", style="CardBold.TLabel").pack(
+                    anchor="w", pady=(16, 2), **pad)
+                self.detail_addr = tk.StringVar(value=row.get("address_to"))
+                self.detail_addr_entry = ttk.Entry(d, textvariable=self.detail_addr)
+                self.detail_addr_entry.pack(fill=tk.X, **pad)
+                self.detail_addr.trace_add("write", lambda *_: self._detail_changed())
+                ttk.Label(d, text="Notes", style="CardBold.TLabel").pack(
+                    anchor="w", pady=(10, 2), **pad)
+                self.detail_notes = tk.Text(
+                    d, height=4, wrap=tk.WORD, relief="flat", borderwidth=0,
+                    highlightthickness=1, highlightcolor=c["accent"],
+                    highlightbackground=c["border"], font=self.fonts["base"],
+                    background=c["surface"], padx=8, pady=6)
+                self.detail_notes.insert("1.0", row.notes)
+                self.detail_notes.pack(fill=tk.X, **pad)
+                self.detail_notes.bind("<KeyRelease>", lambda _e: self._detail_changed())
+                self.detail_notes.bind("<FocusOut>", lambda _e: self._detail_changed())
+
+            # Why this score, itemised.
+            if info.breakdown:
+                ttk.Label(d, text="Why it scored " + (info.score or ""),
+                          style="CardH2.TLabel").pack(anchor="w", pady=(20, 4), **pad)
+                grid = tk.Frame(d, bg=c["surface"])
+                grid.pack(fill=tk.X, **pad)
+                grid.columnconfigure(0, weight=1)
+                for i, (label, points) in enumerate(info.breakdown):
+                    ttk.Label(grid, text=label, style="Card.TLabel").grid(
+                        row=i, column=0, sticky="w", pady=1)
+                    tk.Label(grid, text=f"{points:+d}", bg=c["surface"],
+                             fg=c["good"] if points > 0 else c["bad"],
+                             font=self.fonts["bold"]).grid(row=i, column=1, sticky="e")
+
+            # The rest, as labelled sections.
+            for heading, rows in info.sections:
+                ttk.Label(d, text=heading, style="CardH2.TLabel").pack(
+                    anchor="w", pady=(18, 4), **pad)
+                grid = tk.Frame(d, bg=c["surface"])
+                grid.pack(fill=tk.X, **pad)
+                grid.columnconfigure(1, weight=1)
+                for i, (label, value) in enumerate(rows):
+                    if label:
+                        ttk.Label(grid, text=label, style="CardMuted.TLabel").grid(
+                            row=i, column=0, sticky="nw", padx=(0, 14), pady=1)
+                    ttk.Label(grid, text=value, style="Card.TLabel",
+                              wraplength=max(160, self._pane_width() - 140),
+                              justify="left").grid(row=i, column=1 if label else 0,
+                                                   columnspan=1 if label else 2,
+                                                   sticky="w", pady=1)
+                if heading == "Reviews" and info.quotes:
+                    for quote in info.quotes:
+                        ttk.Label(d, text=f"“{quote}”", style="CardMuted.TLabel",
+                                  wraplength=self._pane_width(), justify="left",
+                                  font=(self.fonts["base"][0], 10, "italic")).pack(
+                            anchor="w", pady=(6, 0), **pad)
+            tk.Frame(d, bg=c["surface"], height=24).pack()
+
+        def _draw_screens(self, parent, row, info) -> None:
+            """Desktop and phone screenshots side by side, click to enlarge."""
+            c = PALETTE
+            frame = tk.Frame(parent, bg=c["surface"])
+            frame.pack(anchor="w", padx=20, pady=(14, 0))
+            desktop, mobile = self._screenshot_paths(row)
+            if not (desktop or mobile):
+                why = ("No website to show." if info.verdict in ("none",) else
+                       "Only a social or directory page — nothing of theirs to show."
+                       if info.verdict == "social_only" else
+                       "No screenshot yet — capture was skipped or failed for this site.")
+                tk.Label(frame, text=why, bg=c["subtle"], fg=c["muted"], height=6,
+                         font=self.fonts["small"], wraplength=self._pane_width() - 40,
+                         width=max(20, self._pane_width() // 8)).pack()
+                return
+            thumbs = self._thumbnails(row.place_id, desktop, mobile, self._pane_width())
+            for path, image in thumbs:
+                if image is None:
+                    continue
+                label = tk.Label(frame, image=image, bg=c["border"], bd=0, padx=1, pady=1,
+                                 cursor="hand2")
+                label.pack(side=tk.LEFT, padx=(0, 8), anchor="n")
+                label.bind("<Button-1>", lambda _e, p=path: menu.open_in_default_app(p))
+            ttk.Label(parent, text="Desktop · phone — click to enlarge",
+                      style="CardSmall.TLabel").pack(anchor="w", padx=20, pady=(4, 0))
+
+        def _screenshot_paths(self, row) -> tuple:
+            """The cached pair for a business, from the cache by Place ID.
+
+            Looked up in the cache rather than trusted from the row's
+            screenshot_path, which is an absolute path from whichever
+            machine and folder ran the find.
+            """
+            from pipeline.screenshots import ScreenshotCapturer
+
+            desktop, mobile = ScreenshotCapturer(cache_dir=menu.cache_dir()).paths_for(
+                row.place_id)
+            if not mobile.is_file():
+                recorded = Path(row.get("screenshot_path") or "")
+                mobile = recorded if recorded.name and recorded.is_file() else mobile
+            return (desktop if desktop.is_file() else None,
+                    mobile if mobile.is_file() else None)
+
+        def _pane_width(self) -> int:
+            """Usable width inside the business pane, for wrapping and images."""
+            width = self.detail.winfo_width()
+            return max(280, (width if width > 50 else 440) - 44)
+
+        def _thumbnails(self, place_id: str, desktop, mobile, width: int = 396) -> list:
+            """(path, PhotoImage) for each shot, kept referenced, cached per row.
+
+            Pillow when present (it ships with the requirements and scales
+            smoothly); Tk's own PNG loader otherwise, which can only shrink by
+            whole factors but needs nothing installed.
+            """
+            # One height for both, chosen so desktop (16:10) + phone (~9:19.5)
+            # + the gap fill the pane's width exactly.
+            height = int(min(210, (width - 8) / (1440 / 900 + 780 / 1688)))
+            key = (place_id, height)
+            if key in self._thumbs:
+                return self._thumbs[key]
+            out = []
+            for path, box in ((desktop, (int(height * 1440 / 900), height)),
+                              (mobile, (int(height * 780 / 1688) + 1, height))):
+                if path is None:
+                    continue
+                image = None
+                try:
+                    from PIL import Image, ImageTk
+
+                    with Image.open(path) as im:
+                        im.thumbnail(box)
+                        image = ImageTk.PhotoImage(im.copy())
+                except ImportError:
+                    try:
+                        full = tk.PhotoImage(file=str(path))
+                        factor = max(1, -(-full.width() // box[0]),
+                                     -(-full.height() // box[1]))
+                        image = full.subsample(factor, factor)
+                    except tk.TclError:
+                        image = None
+                except Exception:  # noqa: BLE001 — a broken file shows as missing
+                    image = None
+                out.append((path, image))
+            if len(self._thumbs) > 60:          # bounded: a batch, not a gallery
+                self._thumbs.clear()
+            self._thumbs[key] = out
+            return out
+
+        def _open_url(self, url: str) -> None:
+            import webbrowser
+
+            webbrowser.open(url if "://" in url else f"https://{url}")
+
+        def _focus_letter_to(self) -> None:
+            entry = getattr(self, "detail_addr_entry", None)
+            if entry is not None and entry.winfo_exists():
+                entry.focus_set()
+                entry.select_range(0, tk.END)
+
+        def _detail_changed(self) -> None:
+            """Typing in the pane writes straight to the row."""
+            if self._filling_detail or self._detail_row is None:
+                return
+            row = self._detail_row
+            if getattr(row, "excluded", None) is not None:
+                return
+            changed = False
+            addr_entry = getattr(self, "detail_addr_entry", None)
+            if addr_entry is not None and addr_entry.winfo_exists():
+                value = self.detail_addr.get().strip()
+                if value != row.get("address_to"):
+                    row.set("address_to", value)
+                    changed = True
+            notes = getattr(self, "detail_notes", None)
+            if notes is not None and notes.winfo_exists():
+                value = notes.get("1.0", "end-1c").rstrip()
+                if value != row.notes:
+                    row.set("notes", value)
+                    changed = True
+            if changed:
+                self.set_review_dirty(True)
+                self._paint_row(row)
+                self.update_review_counts()
+
+        def _commit_detail(self) -> None:
+            """Take whatever is in the pane's fields before it is redrawn."""
+            if self._detail_row is not None:
+                self._detail_changed()
 
         # -- shortlist: data --------------------------------------------------
 
@@ -749,17 +1299,45 @@ def build_app():
                 if self.review_batch is not None:
                     self.review_pick.set(self.review_batch.name)
                 return
-            self._cancel_edit()
+            self._detail_row = None
             try:
                 self.sheet = review_mod.load(Batch(folder))
             except Exception as exc:  # noqa: BLE001
                 messagebox.showerror(APP_TITLE, f"Could not read that batch:\n{exc}")
                 return
             self.review_batch = folder
+            self._records.clear()
+            self._thumbs.clear()
+            self.excluded_rows = self._load_excluded(folder)
             self.set_review_dirty(False)
             self.fill_review()
             if not len(self.sheet):
                 self._log_line(f"{folder.name}: shortlist.csv is empty.")
+
+        def _load_excluded(self, folder: Path) -> list:
+            """excluded.csv as read-only rows, so the rules' drops can be seen
+            in the window instead of in a spreadsheet."""
+            from pipeline.storage import read_csv_rows
+
+            path = Batch(folder).excluded_path
+            if not path.is_file():
+                return []
+            out = []
+            try:
+                for raw in read_csv_rows(path):
+                    row = review_mod.ReviewRow(row={
+                        "place_id": raw.get("place_id") or f"excluded-{len(out)}",
+                        "name": raw.get("name") or "",
+                        "town": raw.get("town") or "",
+                        "site_verdict": raw.get("site_verdict") or "",
+                        "review_count": raw.get("review_count") or "",
+                        "website_url": raw.get("website") or "",
+                    }, reason=raw.get("reason") or "")
+                    row.excluded = raw
+                    out.append(row)
+            except Exception:  # noqa: BLE001 — a bad file hides the view, not the batch
+                return []
+            return out
 
         def reload_review(self) -> None:
             if self._confirm_discard("Reloading from disk"):
@@ -788,17 +1366,21 @@ def build_app():
             if not getattr(self, "_disk_notice_shown", False):
                 self._disk_notice_shown = True
                 self.review_dirty_label.configure(
-                    text="unsaved changes — and the file changed on disk")
+                    text="Unsaved changes — and the file changed on disk")
                 self._log_line(f"{self.review_batch.name}: changed outside the window while "
                                "you have unsaved changes here. Saving will ask which to keep.")
+
+        def _showing_excluded(self) -> bool:
+            return self.review_filter.get() == "Excluded by the rules"
 
         def _visible_rows(self) -> list:
             if self.sheet is None:
                 return []
             wanted = self.review_filter.get()
             needle = self.review_search.get().strip().lower()
+            source = self.excluded_rows if self._showing_excluded() else self.sheet.rows
             out = []
-            for row in self.sheet.rows:
+            for row in source:
                 if wanted == "Not yet decided" and row.decision != review_mod.UNDECIDED:
                     continue
                 if wanted == "Keeps" and row.decision != review_mod.KEEP:
@@ -811,49 +1393,84 @@ def build_app():
                 out.append(row)
             return out
 
-        MARKS = {"keep": "✓", "cull": "✗", "": "·"}
+        def _row_values(self, row) -> list:
+            from pipeline.details import VERDICT_LABELS
+
+            out = []
+            for key, *_ in self.REVIEW_COLUMNS:
+                if key == "decision":
+                    out.append(status_text(row.decision, row.reason,
+                                           excluded=getattr(row, "excluded", None) is not None))
+                elif key == "site_verdict":
+                    out.append(VERDICT_LABELS.get(row.get(key), row.get(key)))
+                else:
+                    out.append(row.get(key))
+            return out
+
+        def _row_tag(self, row) -> str:
+            if getattr(row, "excluded", None) is not None:
+                return "excluded"
+            return row.decision if row.decision else "todo"
+
+        def _sync_actions(self) -> None:
+            """Decisions make no sense on the excluded list: grey them out."""
+            excluded = self._showing_excluded()
+            for child in self.act_bar.winfo_children():
+                try:
+                    child.configure(state=tk.DISABLED if excluded else tk.NORMAL)
+                except tk.TclError:
+                    pass
+            if not excluded:
+                self.review_reason.configure(state="readonly")
+            self.review_hint.configure(text=(
+                "Read-only: dropped by the selection rules. To bring them back, run "
+                "Find again with 'Keep dormant' or 'Keep fine' ticked."
+                if excluded else
+                "k keep · c cull · u undecide, each moving to the next row · Ctrl+S "
+                "save. Untouched rows count as keeps."))
 
         def fill_review(self) -> None:
-            self._cancel_edit()
+            self._sync_actions()
+            keep_focus = self.review_tree.focus()
             self.review_tree.delete(*self.review_tree.get_children())
             for row in self._visible_rows():
-                tag = row.decision if row.decision else "todo"
-                values = []
-                for key, *_ in self.REVIEW_COLUMNS:
-                    if key == "decision":
-                        values.append(self.MARKS.get(row.decision, "·"))
-                    elif key == "reason":
-                        values.append(row.reason)
-                    elif key == "notes":
-                        values.append(row.notes)
-                    else:
-                        values.append(row.get(key))
                 self.review_tree.insert("", tk.END, iid=row.place_id,
-                                        values=values, tags=(tag,))
+                                        values=self._row_values(row),
+                                        tags=(self._row_tag(row),))
+            kids = self.review_tree.get_children()
+            target = keep_focus if keep_focus in kids else (kids[0] if kids else "")
+            if target:
+                self.review_tree.selection_set(target)
+                self.review_tree.focus(target)
+                self.review_tree.see(target)
+            else:
+                self._build_detail_placeholder(
+                    "Nothing matches this view." if self.sheet is not None else "")
             self.update_review_counts()
 
         def update_review_counts(self) -> None:
+            for child in self.review_counts.winfo_children():
+                child.destroy()
             if self.sheet is None:
-                self.review_counts.configure(text="")
                 return
             counts = self.sheet.counts()
-            shown = len(self.review_tree.get_children())
-            text = (f"{counts[review_mod.KEEP]} keep · "
-                    f"{counts[review_mod.CULL]} cull · "
-                    f"{counts[review_mod.UNDECIDED]} undecided")
-            if shown != len(self.sheet):
-                text += f"   (showing {shown} of {len(self.sheet)})"
-            self.review_counts.configure(text=text)
+            for text, tone in ((f"{counts[review_mod.KEEP]} kept", "good"),
+                               (f"{counts[review_mod.CULL]} culled", "bad"),
+                               (f"{counts[review_mod.UNDECIDED]} to decide", "ok"),
+                               (f"{len(self.excluded_rows)} excluded", "muted")):
+                self.chip(self.review_counts, text, tone).pack(side=tk.LEFT, padx=(0, 6))
+            if self.review_batch is not None:
+                self.head_status.configure(text=self.review_batch.name)
 
         def set_review_dirty(self, dirty: bool) -> None:
             self.review_dirty = dirty
             self.review_dirty_label.configure(
-                text="unsaved changes" if dirty else "")
+                text="● Unsaved changes" if dirty else "")
 
         def sort_review(self, key: str) -> None:
             """Click a header to sort; click again to reverse. Score starts
             highest-first, everything else A→Z / low→high."""
-            if self.sheet is None:
+            if self.sheet is None or self._showing_excluded():
                 return
             if getattr(self, "_review_sort", None) == key:
                 self._review_sort_desc = not self._review_sort_desc
@@ -874,16 +1491,42 @@ def build_app():
             return [r for r in (self.sheet.by_id(i)
                                 for i in self.review_tree.selection()) if r]
 
-        def mark(self, decision: str) -> None:
-            rows = self._selected_rows()
+        def mark(self, decision: str, rows=None):
+            """Keep, cull or undecide; then move on to the next row.
+
+            Moving on is what makes a cull quick: k, k, c, k… down the list
+            with the pane following, instead of click-row, click-button.
+            """
+            if self._showing_excluded():
+                return "break"
+            rows = rows if rows is not None else self._selected_rows()
             if not rows:
-                return
+                return "break"
+            self._commit_detail()
+            before = list(self.review_tree.get_children())
+            anchor = rows[-1].place_id
+            index = before.index(anchor) if anchor in before else -1
             reason = self.review_reason.get() if decision == review_mod.CULL else ""
             for row in rows:
                 row.decision = decision
                 row.reason = reason
             self.set_review_dirty(True)
-            self._refresh_rows(rows)
+            for row in rows:
+                self._paint_row(row)
+            self.update_review_counts()
+            if len(rows) == 1 and index >= 0:
+                after = list(self.review_tree.get_children())
+                if after:
+                    # Next row down: the one after this, or — if this one left
+                    # the view (a filter) — whatever now sits in its place.
+                    still_here = anchor in after
+                    nxt = after[min(index + (1 if still_here else 0), len(after) - 1)]
+                    self.review_tree.selection_set(nxt)
+                    self.review_tree.focus(nxt)
+                    self.review_tree.see(nxt)
+            else:
+                self.show_detail()
+            self.review_tree.focus_set()
             return "break"
 
         def apply_reason(self) -> None:
@@ -893,90 +1536,27 @@ def build_app():
                 return
             for row in rows:
                 row.reason = self.review_reason.get()
+                self._paint_row(row)
             self.set_review_dirty(True)
-            self._refresh_rows(rows)
-
-        def _refresh_rows(self, rows) -> None:
-            """Repaint just the rows that changed, keeping scroll and selection."""
-            visible = {r.place_id for r in self._visible_rows()}
-            for row in rows:
-                if row.place_id not in visible:
-                    # It no longer matches the filter: drop it from view.
-                    if self.review_tree.exists(row.place_id):
-                        self.review_tree.delete(row.place_id)
-                    continue
-                if not self.review_tree.exists(row.place_id):
-                    self.fill_review()
-                    return
-                self.review_tree.item(
-                    row.place_id,
-                    values=[(self.MARKS.get(row.decision, "·") if key == "decision"
-                             else row.reason if key == "reason"
-                             else row.notes if key == "notes"
-                             else row.get(key))
-                            for key, *_ in self.REVIEW_COLUMNS],
-                    tags=(row.decision if row.decision else "todo",))
             self.update_review_counts()
+            self.show_detail()
 
-        # -- shortlist: inline editing ----------------------------------------
-
-        def begin_edit(self, event) -> None:
-            """Put an Entry over the cell that was double-clicked."""
-            if self.sheet is None:
+        def _paint_row(self, row) -> None:
+            """Repaint one row in place; drop it if it no longer fits the view."""
+            if not self.review_tree.exists(row.place_id):
                 return
-            item = self.review_tree.identify_row(event.y)
-            column = self.review_tree.identify_column(event.x)
-            if not item or not column:
+            if row not in self._visible_rows():
+                self.review_tree.delete(row.place_id)
                 return
-            index = int(column[1:]) - 1
-            if not 0 <= index < len(self.REVIEW_COLUMNS):
-                return
-            key = self.REVIEW_COLUMNS[index][0]
-            if key not in self.EDITABLE_COLUMNS:
-                return
-            row = self.sheet.by_id(item)
-            if row is None:
-                return
-            box = self.review_tree.bbox(item, column)
-            if not box:
-                return
-            self._cancel_edit()
-            x, y, width, height = box
-            entry = ttk.Entry(self.review_tree)
-            entry.insert(0, row.notes if key == "notes" else row.get(key))
-            entry.select_range(0, tk.END)
-            entry.place(x=x, y=y, width=width, height=height)
-            entry.focus_set()
-            entry.bind("<Return>", lambda _e: self._commit_edit())
-            entry.bind("<Escape>", lambda _e: self._cancel_edit())
-            entry.bind("<FocusOut>", lambda _e: self._commit_edit())
-            self._editor = (entry, row, key)
-
-        def _commit_edit(self) -> None:
-            if self._editor is None:
-                return
-            entry, row, key = self._editor
-            value = entry.get().strip()
-            self._editor = None
-            entry.destroy()
-            if value != (row.notes if key == "notes" else row.get(key)):
-                row.set(key, value)
-                self.set_review_dirty(True)
-                self._refresh_rows([row])
-
-        def _cancel_edit(self) -> None:
-            if self._editor is None:
-                return
-            entry, _row, _key = self._editor
-            self._editor = None
-            entry.destroy()
+            self.review_tree.item(row.place_id, values=self._row_values(row),
+                                  tags=(self._row_tag(row),))
 
         # -- shortlist: saving -------------------------------------------------
 
         def save_review(self) -> None:
             if self.sheet is None or self.review_batch is None:
                 return
-            self._commit_edit()
+            self._commit_detail()
             problems = review_mod.validate(self.sheet)
             if problems:
                 shown = "\n".join(problems[:8])
@@ -1027,6 +1607,8 @@ def build_app():
             self.refresh_batches()
 
         def open_review_csv(self) -> None:
+            """Optional now — everything is in the window — but still there
+            for anyone who wants the list in a spreadsheet."""
             folder = self._selected_review_folder()
             if folder is None:
                 return
@@ -1055,7 +1637,7 @@ def build_app():
             sb = ttk.Scrollbar(f, command=self.batch_tree.yview)
             self.batch_tree.configure(yscrollcommand=sb.set)
             sb.grid(row=0, column=1, sticky="ns")
-            self.batch_tree.bind("<Double-1>", lambda _e: self.open_best_csv())
+            self.batch_tree.bind("<Double-1>", lambda _e: self.review_selected_batch())
 
             holder, side = self._scrollable(f, width=300)
             holder.grid(row=0, column=2, sticky="ns", padx=(12, 0))
@@ -1069,15 +1651,15 @@ def build_app():
                       foreground="#666").pack(anchor="w", pady=(0, 6))
 
             s = section("Open")
-            ttk.Button(s, text="Open shortlist / approved", command=self.open_best_csv).pack(fill=tk.X, pady=1)
-            ttk.Button(s, text="Open excluded list", command=self.open_excluded).pack(fill=tk.X, pady=1)
+            ttk.Button(s, text="Review in the Shortlist tab", style="Accent.TButton",
+                       command=self.review_selected_batch).pack(fill=tk.X, pady=1)
+            ttk.Button(s, text="See what the rules excluded", command=self.open_excluded).pack(fill=tk.X, pady=1)
+            ttk.Button(s, text="Open CSV in a spreadsheet", command=self.open_best_csv).pack(fill=tk.X, pady=1)
             ttk.Button(s, text="Open batch folder", command=self.open_folder).pack(fill=tk.X, pady=1)
             ttk.Button(s, text="Refresh", command=self.refresh_batches).pack(fill=tk.X, pady=(6, 1))
 
             s = section("Cull")
             self.sheet_approved_only = tk.BooleanVar(value=True)
-            ttk.Button(s, text="Review on the Shortlist tab",
-                       command=self.review_selected_batch).pack(fill=tk.X, pady=(1, 6))
             ttk.Button(s, text="Build contact sheet", command=self.run_contactsheet).pack(fill=tk.X, pady=1)
             ttk.Checkbutton(s, text="approved rows only, if culled",
                             variable=self.sheet_approved_only).pack(anchor="w")
@@ -1110,7 +1692,9 @@ def build_app():
             ttk.Button(s, text="Tune scoring from every cull", command=self.run_tune).pack(fill=tk.X, pady=1)
 
         def _build_setup(self) -> None:
-            f = self.tab_setup
+            # Scrollable: on a laptop screen the folder paths fell off the end.
+            holder, f = self._scrollable(self.tab_setup, width=900)
+            holder.pack(fill=tk.BOTH, expand=True)
             f.columnconfigure(0, weight=1)
             keys = ttk.LabelFrame(f, text="API keys (saved to .env in the project folder — never committed)", padding=10)
             keys.grid(row=0, column=0, sticky="ew")
@@ -1154,19 +1738,20 @@ def build_app():
 
         # -- helpers ----------------------------------------------------------
 
-        @staticmethod
-        def _scrollable(parent, width):
-            """A fixed-width column that grows a scrollbar when it has to.
+        def _scrollable(self, parent, width, bg=None):
+            """A column that grows a scrollbar when it has to, and scrolls
+            with the mouse wheel while the pointer is over it.
 
             The action panel is taller than a 768px laptop screen once the
             log pane takes its share, and a button you cannot reach is the
             same as a button that isn't there.
             """
+            bg = bg or PALETTE["bg"]
             holder = ttk.Frame(parent)
             canvas = tk.Canvas(holder, width=width, highlightthickness=0,
-                               borderwidth=0)
+                               borderwidth=0, background=bg)
             bar = ttk.Scrollbar(holder, orient=tk.VERTICAL, command=canvas.yview)
-            inner = ttk.Frame(canvas)
+            inner = tk.Frame(canvas, bg=bg)
             window = canvas.create_window((0, 0), window=inner, anchor="nw")
             canvas.configure(yscrollcommand=bar.set)
             canvas.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -1181,9 +1766,34 @@ def build_app():
                     bar.pack(side=tk.RIGHT, fill=tk.Y)
                 elif not needed and bar.winfo_ismapped():
                     bar.pack_forget()
+                    canvas.yview_moveto(0)
+
+            def wheel(event):
+                if inner.winfo_reqheight() <= canvas.winfo_height():
+                    return
+                if getattr(event, "num", None) in (4, 5):        # Linux
+                    step = -1 if event.num == 4 else 1
+                else:                                            # Windows, macOS
+                    step = -1 if event.delta > 0 else 1
+                    if os.name == "nt":
+                        step *= max(1, abs(event.delta) // 120)
+                canvas.yview_scroll(step * 2, "units")
+
+            def enter(_e):
+                canvas.bind_all("<MouseWheel>", wheel)
+                canvas.bind_all("<Button-4>", wheel)
+                canvas.bind_all("<Button-5>", wheel)
+
+            def leave(_e):
+                canvas.unbind_all("<MouseWheel>")
+                canvas.unbind_all("<Button-4>")
+                canvas.unbind_all("<Button-5>")
 
             inner.bind("<Configure>", resized)
             canvas.bind("<Configure>", resized)
+            holder.bind("<Enter>", enter)
+            holder.bind("<Leave>", leave)
+            holder.scroll_top = lambda: canvas.yview_moveto(0)
             return holder, inner
 
         def _weights_threshold(self, name, default):
@@ -1196,7 +1806,7 @@ def build_app():
 
         def _log_line(self, line: str) -> None:
             self.log.configure(state=tk.NORMAL)
-            self.log.insert(tk.END, line + "\n")
+            self.log.insert(tk.END, line + "\n", log_tag(line))
             self.log.see(tk.END)
             self.log.configure(state=tk.DISABLED)
 
@@ -1461,8 +2071,14 @@ def build_app():
             folder = self._one_batch()
             if folder is None:
                 return
-            self.review_pick.set(folder.name)
-            self.load_review()
+            if self.review_batch != folder:
+                self.review_pick.set(folder.name)
+                self.load_review()
+                if self.review_batch != folder:      # unsaved changes: they said no
+                    return
+            if self._showing_excluded():
+                self.review_filter.set("Everything")
+                self.fill_review()
             self.tabs.select(self.tab_review)
 
         def open_best_csv(self) -> None:
@@ -1473,14 +2089,21 @@ def build_app():
             self._open(approved if approved.is_file() else folder / "shortlist.csv")
 
         def open_excluded(self) -> None:
+            """The rules' drops, in the window: the Shortlist tab's Excluded view."""
             folder = self._one_batch()
             if folder is None:
                 return
-            path = folder / "excluded.csv"
-            if not path.is_file():
-                messagebox.showinfo(APP_TITLE, "Nothing was excluded in this batch — no file to open.")
+            if not (folder / "excluded.csv").is_file():
+                messagebox.showinfo(APP_TITLE, "Nothing was excluded in this batch.")
                 return
-            self._open(path)
+            if self.review_batch != folder:
+                self.review_pick.set(folder.name)
+                self.load_review()
+                if self.review_batch != folder:      # unsaved changes: they said no
+                    return
+            self.review_filter.set("Excluded by the rules")
+            self.fill_review()
+            self.tabs.select(self.tab_review)
 
         def open_folder(self) -> None:
             folder = self._one_batch()

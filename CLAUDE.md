@@ -88,8 +88,16 @@ Current task section is the main way this repo becomes confusing.
     reconciled against Companies House directors (spec section 5 step 2),
     `run.py` — a menu wrapper over the CLIs — and `gui.py`, a tkinter window
     (Find prospects / Shortlist / Batches / Setup, with a live output pane)
-    launched by `gui.bat` / `gui.command`. The **Shortlist** tab is the
-    editable review sheet backed by `pipeline/review.py`, which is the
+    launched by `gui.bat` / `gui.command`, styled from one `PALETTE` over the
+    "clam" theme so it looks the same on every OS. The **Shortlist** tab is a
+    list plus a business pane — screenshots from the cache, who to write to,
+    the itemised score, contact/review/site evidence, lookup failures —
+    whose content comes from `pipeline/details.py` (pure, tested), so no
+    spreadsheet is needed to review a batch; it also shows `excluded.csv`
+    read-only. Stop kills the whole process tree (Playwright's browser is
+    detached on POSIX), and screenshots are written via a `.part` rename so
+    a killed run can't cache a truncated PNG. The review sheet is
+    backed by `pipeline/review.py`, which is the
     **single writer** of `approved.csv` and `rejections.jsonl` — `cull.py`
     applies its decisions through it too, so the console, the contact sheet
     and the sheet follow one set of rules. Edits (`address_to`, `notes`) live

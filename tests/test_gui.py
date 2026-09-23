@@ -248,3 +248,26 @@ class TestStopKillsTheWholeTree(unittest.TestCase):
                 time.sleep(0.05)
             self.assertFalse(gui._alive(grandchild), "detached browser survived Stop")
             self.assertFalse(runner.busy)
+
+
+class TestPresentation(unittest.TestCase):
+    """The small pure helpers the window's look depends on."""
+
+    def test_status_text(self):
+        self.assertEqual(gui.status_text("keep", ""), "✓ kept")
+        self.assertEqual(gui.status_text("cull", "site_fine"), "✗ site fine")
+        self.assertEqual(gui.status_text("cull", ""), "✗ culled")
+        self.assertEqual(gui.status_text("", ""), "")
+
+    def test_excluded_reasons_are_short(self):
+        self.assertEqual(gui.status_text("", "chain_or_franchise", excluded=True), "⊘ chain")
+        self.assertEqual(gui.status_text("", "non_operational", excluded=True), "⊘ closed")
+        self.assertEqual(gui.status_text("", "dormant", excluded=True), "⊘ dormant")
+
+    def test_log_tags(self):
+        self.assertEqual(gui.log_tag("Traceback (most recent call last):"), ("err",))
+        self.assertEqual(gui.log_tag("  site check failed for Odd Clinic"), ("err",))
+        self.assertEqual(gui.log_tag("[finished with exit code 1]"), ("err",))
+        self.assertEqual(gui.log_tag("[finished with exit code 0]"), ("ok",))
+        self.assertEqual(gui.log_tag("b1: saved 4 approved, 2 rejected"), ("ok",))
+        self.assertEqual(gui.log_tag("Searching Places for 'physio'…"), ())

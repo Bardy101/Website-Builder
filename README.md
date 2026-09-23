@@ -79,12 +79,14 @@ bottom:
 | Tab | What's on it |
 |---|---|
 | **Find prospects** | Niche, town, radius and row count; the searches you have already paid for, click one to reuse it free; tick boxes for screenshots, site checks, owner lookup and the two selection rules; a line telling you whether this run will bill Google before you press anything |
-| **Shortlist** | The batch as an editable sheet — see below |
-| **Batches** | Every batch with its found / kept / excluded counts and status. Select one to open its shortlist, its excluded list or its folder; build a contact sheet; import decisions. Ctrl-click several to combine them |
+| **Shortlist** | The list on the left, the business on the right — its website screenshots, who to write to, why it scored what it did. Where you cull. See below |
+| **Batches** | Every batch with its found / kept / excluded counts and status. Double-click one to review it; see what the rules excluded; build a contact sheet; import decisions. Ctrl-click several to combine them |
 | **Setup** | The three API keys with what each is for and where to get it, a Check setup button and a Test keys button |
 
 It is a skin over the same scripts — each button builds a command line, shows
-it in the output pane, and runs it. Nothing is hidden: if a run misbehaves you
+it in the output pane, and runs it. Failures show in red there, completions in
+green. **Stop** ends the whole run, including the browser that takes
+screenshots — earlier versions left Chromium running in the background. Nothing is hidden: if a run misbehaves you
 can copy the command it printed and run it yourself.
 
 Needs tkinter, which python.org installers include by default. If the window
@@ -92,23 +94,45 @@ won't open it says why, and the menu below still works.
 
 ---
 
-## The Shortlist tab: view, cull, edit, save
+## The Shortlist tab: review a batch without a spreadsheet
 
-Pick a batch and the whole list is there, one row each, colour-coded: kept
-rows tinted, culled rows greyed out, undecided plain.
+Pick a batch. The list is on the left; whichever business is selected is
+laid out on the right:
 
-- **Cull with the keyboard.** Select rows and press **k** to keep, **c** to
-  cull, **u** to undecide. Multi-select works, so five chains go in one go.
-  The reason dropdown applies to culls; changing it re-codes whatever culled
-  rows are selected.
-- **Edit in place.** Double-click **Address to** or **Notes** and type.
-  `address_to` is the one that matters when Companies House named the
-  registered owner but the website names the person who actually runs the
-  place. Everything else is measured, and editing a measurement by hand would
-  make the score a lie, so the other columns are read-only.
-- **Filter and find.** Show everything, only the undecided, only keeps or only
-  culls; the search box matches name, town or notes.
-- **Save decisions**, and it is all there next time you open it.
+- **Its website, as a visitor sees it** — the desktop and phone screenshots
+  side by side, from the cache. Click either for full size. A business with
+  no site, or only a Facebook page, says so instead.
+- **Open website** and **Google Maps**, one click each.
+- **Who to write to** — the Companies House name, the person the website
+  names, and which one the letter should go to. When they disagree it says
+  so in an amber note, because that's the row worth ten seconds of your eyes.
+- **Why it scored what it did**, itemised: "Not built for phones +25",
+  "Very few reviews −20". The same breakdown that explains a negative score.
+- **Contact details, reviews** (with a few quoted), **opening hours**, and
+  **the website evidence** in plain English — works on phones, HTTPS,
+  copyright year, platform.
+- Anything that went wrong during the find — a Companies House lookup that
+  timed out, say — as a note, so a blank means *unknown*, not *none*.
+
+**Culling is keyboard-first.** **k** keeps, **c** culls with the reason in
+the dropdown, **u** undecides — and each moves straight on to the next row
+with the pane following, so a batch is k, k, c, k… down the list. Multi-select
+works for doing several at once; the pane's own Keep and Cull buttons act on
+just the business shown. The **Status** column reads "✓ kept" or "✗ chain" at
+a glance.
+
+**Letter to** and **Notes** sit in the pane and save as you type (with the
+rest, when you press **Save decisions** or **Ctrl+S**). Everything else is
+measured, and editing a measurement by hand would make the score a lie, so
+it's read-only.
+
+**Show** narrows the list: everything, undecided, keeps, culls — or
+**Excluded by the rules**, the businesses the dormant/fine/chain rules dropped
+before they reached the list, each with its reason. That view is read-only;
+to bring them back, run Find again with the matching box ticked.
+
+**Open as CSV** is still there if you want the list in a spreadsheet, but
+nothing needs it any more.
 
 **Where it is stored, and why that matters.** Decisions go to the same two
 files the rest of the pipeline already uses — `approved.csv` for the keeps, a
