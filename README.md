@@ -116,10 +116,36 @@ rejection in `rejections.jsonl` for each cull. Nothing invents a private
 store, so a cull done in the contact sheet or by `cull.py` shows up here, and
 a cull done here feeds `tune.py` exactly as before.
 
-Notes and a corrected `address_to` are the one thing those files cannot keep
-(a regenerated shortlist would overwrite them), so they also go to
-`review.json` beside them, keyed by Place ID, and are re-applied on load.
-Delete that file and you lose the notes; the decisions survive.
+Your edits live in the same row as the decision: a corrected `address_to` or
+a note is in the `approved.csv` row for a keep, and in the rejection record
+for a cull. There is no second copy, so **editing `approved.csv` in your
+spreadsheet works** — *Open in spreadsheet*, change an addressee or a note,
+save, and it's what the sheet shows next time. Excel's "CSV UTF-8" and plain
+"CSV" formats both read back correctly.
+
+Only those two columns are read back from your spreadsheet. The measured
+columns (score, verdict, review count, phone…) always come from
+`shortlist.csv`, because a spreadsheet re-save turns `01462` into `1462` and
+`2026-08-20` into `20/08/2026`, and those shouldn't leak into the list.
+
+If you save in the spreadsheet while the window has the same batch open,
+the window notices within a couple of seconds. With no unsaved changes it
+simply reloads. With unsaved changes it keeps yours, flags the conflict next
+to the search box, and **Save decisions** asks which to keep — yours, or
+what's on disk. If the spreadsheet still has the file open when you save in
+the window, Windows won't allow the write: you're told to close it there,
+and nothing is lost.
+
+The window never throws away unsaved decisions without asking. Opening
+another batch, **Reload from disk** and importing decisions all check first;
+a **Find** that finishes while you have unsaved changes leaves your sheet
+alone and tells you the new batch is ready.
+
+Click any column header to sort by it, and again to reverse — numbers sort
+as numbers, blanks go last, and the ✓/✗ column puts undecided rows first.
+
+(Earlier versions also kept notes in a `review.json` side-car. It's read if
+present and removed on the next save; everything in it is in the rows.)
 
 Two behaviours worth knowing:
 
@@ -526,7 +552,6 @@ month). What it saves is everything after that: the site fetch, PageSpeed,
 the screenshot, the Companies House lookup and the About-page read. Chains
 and closed businesses are the ones screened before the details call, from
 fields the search does return.
-
 
 **`fine`** excludes only a site that was actually measured and came back clean.
 A site whose fetch failed is `unknown`, not `fine`, and stays in the list.

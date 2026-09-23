@@ -172,6 +172,23 @@ def cost_note(
                    "will bill Google Places.")
 
 
+def pairs_for_run(
+    listed: list[tuple[str, str]], typed: tuple[str, str]
+) -> tuple[list[tuple[str, str]], bool]:
+    """(pairs to search, whether the typed pair is being left out).
+
+    Once the run list has entries the typed fields only add to it — so a
+    niche typed and never added would silently not be searched. The second
+    value says that is about to happen, so the window can ask instead.
+    """
+    niche, area = (typed[0] or "").strip(), (typed[1] or "").strip()
+    if not listed:
+        return ([(niche, area)] if niche and area else []), False
+    wanted = {(n.lower(), a.lower()) for n, a in listed}
+    left_out = bool(niche and area) and (niche.lower(), area.lower()) not in wanted
+    return list(listed), left_out
+
+
 def batch_summary(folder: Path) -> dict:
     """Counts a human wants next to a batch name. Cheap: three small files."""
     batch = Batch(folder)
@@ -480,15 +497,15 @@ def build_app():
         # you are here to change, and the eye should land on it.
         REVIEW_COLUMNS = [
             ("decision", "", 34, "center"),
-            ("lead_score", "Score", 52, "e"),
+            ("lead_score", "Score", 68, "e"),
             ("name", "Business", 210, "w"),
-            ("town", "Town", 92, "w"),
-            ("site_verdict", "Site", 92, "w"),
-            ("staleness_points", "Stale", 52, "e"),
-            ("review_count", "Reviews", 68, "e"),
-            ("recent_review_date", "Last review", 100, "w"),
-            ("address_to", "Address to", 140, "w"),
-            ("reason", "Cull reason", 110, "w"),
+            ("town", "Town", 100, "w"),
+            ("site_verdict", "Site", 100, "w"),
+            ("staleness_points", "Stale", 66, "e"),
+            ("review_count", "Reviews", 86, "e"),
+            ("recent_review_date", "Last review", 116, "w"),
+            ("address_to", "Address to", 150, "w"),
+            ("reason", "Cull reason", 124, "w"),
             ("notes", "Notes", 200, "w"),
         ]
         EDITABLE_COLUMNS = {"address_to", "notes"}
@@ -514,13 +531,11 @@ def build_app():
             self.review_pick.pack(side=tk.LEFT, padx=(6, 8))
             self.review_pick.bind("<<ComboboxSelected>>", lambda _e: self.load_review())
             ttk.Button(top, text="Reload from disk",
-                       command=lambda: self.load_review(force=True)).pack(side=tk.LEFT)
+                       command=self.reload_review).pack(side=tk.LEFT)
             ttk.Button(top, text="Open in spreadsheet",
                        command=self.open_review_csv).pack(side=tk.LEFT, padx=6)
             self.review_counts = ttk.Label(top, text="", foreground="#333")
             self.review_counts.pack(side=tk.LEFT, padx=12)
-            self.review_dirty_label = ttk.Label(top, text="", foreground="#b35c00")
-            self.review_dirty_label.pack(side=tk.RIGHT)
 
             # Row 1: narrowing the list down.
             bar = ttk.Frame(f)
@@ -537,6 +552,10 @@ def build_app():
             self.review_search.pack(side=tk.LEFT, padx=6)
             self.review_search.bind("<KeyRelease>", lambda _e: self.fill_review())
             ttk.Label(bar, text="name, town or notes", foreground="#666").pack(side=tk.LEFT)
+            # On this row, not the top one: the batch picker and counts fill
+            # that, and the conflict message is long enough to be clipped.
+            self.review_dirty_label = ttk.Label(bar, text="", foreground="#b35c00")
+            self.review_dirty_label.pack(side=tk.RIGHT)
 
             # Row 2: the sheet.
             wrap = ttk.Frame(f)
@@ -614,13 +633,32 @@ def build_app():
             return next((f for f in getattr(self, "review_folders", [])
                          if f.name == name), None)
 
+        def _confirm_discard(self, doing: str) -> bool:
+            """True if there is nothing unsaved, or the operator says discard.
+
+            Every path that replaces the sheet comes through here. Before this
+            existed, three of them (Reload, a Find finishing, an import) threw
+            unsaved decisions away without a word.
+            """
+            if not self.review_dirty:
+                return True
+            name = self.review_batch.name if self.review_batch else "this batch"
+            return messagebox.askokcancel(
+                APP_TITLE,
+                f"You have unsaved decisions on {name}.\n\n{doing} will discard "
+                "them. Continue?\n\n(Cancel, then Save decisions, to keep them.)",
+                icon="warning")
+
         def load_review(self, force: bool = False) -> None:
+            """Load the batch selected in the picker.
+
+            ``force`` means the caller has already dealt with unsaved changes
+            (confirmed, saved, or there were none) — never "discard silently".
+            """
             folder = self._selected_review_folder()
             if folder is None:
                 return
-            if self.review_dirty and not force and not messagebox.askokcancel(
-                APP_TITLE, "There are unsaved decisions on this sheet. "
-                "Loading another batch will discard them. Continue?"):
+            if not force and not self._confirm_discard("Opening another batch"):
                 # Put the picker back where it was.
                 if self.review_batch is not None:
                     self.review_pick.set(self.review_batch.name)
@@ -636,6 +674,37 @@ def build_app():
             self.fill_review()
             if not len(self.sheet):
                 self._log_line(f"{folder.name}: shortlist.csv is empty.")
+
+        def reload_review(self) -> None:
+            if self._confirm_discard("Reloading from disk"):
+                self.load_review(force=True)
+
+        def _check_disk(self) -> None:
+            """Notice when the files under the sheet change from outside.
+
+            Polled rather than tied to window focus, which Tk reports to
+            whichever child had focus rather than to the window, so it is not
+            dependable. The poll is three stat() calls. It also catches
+            cull.py run from a console while the window is open.
+            """
+            if self.sheet is None or self.review_batch is None:
+                return
+            batch = Batch(self.review_batch)
+            if not review_mod.changed_on_disk(batch, self.sheet):
+                self._disk_notice_shown = False
+                return
+            if not self.review_dirty:
+                # Nothing of yours to lose: show what's on disk now.
+                self.load_review(force=True)
+                self._log_line(f"{self.review_batch.name}: reloaded — it was changed "
+                               "outside the window (spreadsheet or cull.py).")
+                return
+            if not getattr(self, "_disk_notice_shown", False):
+                self._disk_notice_shown = True
+                self.review_dirty_label.configure(
+                    text="unsaved changes — and the file changed on disk")
+                self._log_line(f"{self.review_batch.name}: changed outside the window while "
+                               "you have unsaved changes here. Saving will ask which to keep.")
 
         def _visible_rows(self) -> list:
             if self.sheet is None:
@@ -696,16 +765,19 @@ def build_app():
                 text="unsaved changes" if dirty else "")
 
         def sort_review(self, key: str) -> None:
+            """Click a header to sort; click again to reverse. Score starts
+            highest-first, everything else A→Z / low→high."""
             if self.sheet is None:
                 return
-            descending = getattr(self, "_review_sort", None) == key
-            self._review_sort = None if descending else key
-            if key == "lead_score":
-                self.sheet.rows.sort(key=lambda r: r.score(), reverse=not descending)
+            if getattr(self, "_review_sort", None) == key:
+                self._review_sort_desc = not self._review_sort_desc
             else:
-                self.sheet.rows.sort(key=lambda r: (r.reason if key == "reason"
-                                                    else r.get(key)).lower(),
-                                     reverse=descending)
+                self._review_sort = key
+                self._review_sort_desc = key == "lead_score"
+            review_mod.sort_rows(self.sheet.rows, key, descending=self._review_sort_desc)
+            arrow = " ▼" if self._review_sort_desc else " ▲"
+            for col, title, *_ in self.REVIEW_COLUMNS:
+                self.review_tree.heading(col, text=title + (arrow if col == key else ""))
             self.fill_review()
 
         # -- shortlist: decisions ---------------------------------------------
@@ -829,11 +901,35 @@ def build_app():
                     "Every cull needs a reason code before this can be saved:\n\n"
                     + shown + "\n\nSelect those rows and pick a reason.")
                 return
+            batch = Batch(self.review_batch)
+            if review_mod.changed_on_disk(batch, self.sheet):
+                answer = messagebox.askyesnocancel(
+                    APP_TITLE,
+                    "approved.csv or the rejection list was changed outside the window "
+                    "since you opened this sheet — probably in your spreadsheet.\n\n"
+                    "Yes — save this sheet, replacing those changes\n"
+                    "No — throw away this sheet's changes and load what's on disk\n"
+                    "Cancel — do nothing yet",
+                    icon="warning")
+                if answer is None:
+                    return
+                if answer is False:
+                    self.load_review(force=True)
+                    return
             try:
-                result = review_mod.save(Batch(self.review_batch), self.sheet)
+                result = review_mod.save(batch, self.sheet)
+            except PermissionError:
+                # Excel holds a lock on an open CSV; Windows refuses the write.
+                messagebox.showerror(
+                    APP_TITLE,
+                    "Couldn't save: approved.csv is open in another program — "
+                    "probably your spreadsheet.\n\nClose it there, then press Save "
+                    "decisions again. Nothing has been lost.")
+                return
             except Exception as exc:  # noqa: BLE001
                 messagebox.showerror(APP_TITLE, f"Could not save:\n{exc}")
                 return
+            self._disk_notice_shown = False
             self.set_review_dirty(False)
             self._log_line(
                 f"{self.review_batch.name}: saved {result['approved']} approved, "
@@ -1025,6 +1121,12 @@ def build_app():
 
         def _tick(self) -> None:
             self.runner.drain()
+            self._ticks = getattr(self, "_ticks", 0) + 1
+            if self._ticks % 20 == 0:          # every two seconds
+                try:
+                    self._check_disk()
+                except Exception:  # noqa: BLE001 — a poll must never kill the loop
+                    pass
             self.after(100, self._tick)
 
         def _set_busy(self, busy: bool, what: str = "") -> None:
@@ -1099,7 +1201,11 @@ def build_app():
         # -- find tab ---------------------------------------------------------
 
         def refresh_history(self) -> None:
-            self.history = past_searches(menu.cache_dir()) if not self._demo_mode() else []
+            # The configured TTL, not a hard-coded 30: a shorter cache would
+            # otherwise be listed as "free to repeat" after it had expired.
+            ttl = Config.from_env().cache_ttl_days
+            self.history = (past_searches(menu.cache_dir(), ttl_days=ttl)
+                            if not self._demo_mode() else [])
             self.history_tree.delete(*self.history_tree.get_children())
             for h in self.history:
                 age = h.age_days
@@ -1113,6 +1219,15 @@ def build_app():
             if not sel:
                 return
             niche, area, radius, *_ = self.history_tree.item(sel[0], "values")
+            if self._listed_pairs():
+                # A run list is being built: a click adds to it, rather than
+                # filling fields the run would then ignore.
+                entry = f"{niche}  in  {area}"
+                if entry not in self.pairs.get(0, tk.END):
+                    self.pairs.insert(tk.END, entry)
+                self.radius.set(radius)
+                self.update_cost()
+                return
             self.niche.set(niche)
             self.area.delete(0, tk.END)
             self.area.insert(0, area)
@@ -1122,12 +1237,13 @@ def build_app():
         def _demo_mode(self) -> bool:
             return not Config.from_env().google_places_api_key
 
+        def _listed_pairs(self) -> list[tuple[str, str]]:
+            return [tuple(item.split("  in  ", 1)) for item in self.pairs.get(0, tk.END)]
+
         def _current_pairs(self) -> list[tuple[str, str]]:
-            listed = [tuple(item.split("  in  ", 1)) for item in self.pairs.get(0, tk.END)]
-            if listed:
-                return [(n, a) for n, a in listed]
-            niche, area = self.niche.get().strip(), self.area.get().strip()
-            return [(niche, area)] if niche and area else []
+            pairs, _ = pairs_for_run(self._listed_pairs(),
+                                     (self.niche.get(), self.area.get()))
+            return pairs
 
         def add_pair(self) -> None:
             niche, area = self.niche.get().strip(), self.area.get().strip()
@@ -1154,10 +1270,29 @@ def build_app():
                 radius = 0
             free, msg = cost_note(self._current_pairs(), radius, self.history,
                                   refresh=self.opt_refresh.get())
+            listed = self._listed_pairs()
+            if listed:
+                _, left_out = pairs_for_run(listed, (self.niche.get(), self.area.get()))
+                msg = (f"This run: {len(listed)} search{'es' if len(listed) != 1 else ''} "
+                       "from the list. " + msg)
+                if left_out:
+                    msg += "\nWhat's typed above isn't in the list — you'll be asked."
             self.cost.configure(text=msg, foreground="#1a7f37" if free else "#b35c00")
 
         def run_find(self) -> None:
-            pairs = self._current_pairs()
+            typed = (self.niche.get().strip(), self.area.get().strip())
+            pairs, left_out = pairs_for_run(self._listed_pairs(), typed)
+            if left_out:
+                answer = messagebox.askyesnocancel(
+                    APP_TITLE,
+                    f"You've typed '{typed[0]} in {typed[1]}', but it isn't in this "
+                    f"run's list of {len(pairs)}.\n\nAdd it to the run?\n\n"
+                    "Yes — search it too\nNo — run just the list\nCancel — go back")
+                if answer is None:
+                    return
+                if answer:
+                    self.add_pair()
+                    pairs = self._current_pairs()
             if not pairs:
                 messagebox.showinfo(APP_TITLE, "Give a niche and a town first.")
                 return
@@ -1201,13 +1336,23 @@ def build_app():
                 self.refresh_batches()
                 self.refresh_review_picker()
                 if code == 0:
-                    # Straight to the list it just built — that is the next
-                    # thing to do with it, and the reason the run was started.
                     folders = menu.list_batches()
-                    if folders:
+                    if folders and self.review_dirty:
+                        # A find takes minutes; the operator may well have been
+                        # culling meanwhile. Never swap the sheet out from under
+                        # unsaved decisions — say the new batch is ready instead.
+                        self._log_line(
+                            f"New batch ready: {folders[0].name}. Your unsaved "
+                            f"decisions on {self.review_batch.name} are untouched — "
+                            "save them, then pick the new batch on the Shortlist tab.")
+                        self.status.configure(text="Done — new batch ready (unsaved "
+                                              "changes kept)", foreground="#1a7f37")
+                    elif folders:
+                        # Straight to the list it just built — the next thing
+                        # to do with it, and the reason the run was started.
                         self.review_pick.set(folders[0].name)
                         self.load_review(force=True)
-                    self.tabs.select(self.tab_review)
+                        self.tabs.select(self.tab_review)
 
             self.start(argv, "find prospects", after=done)
 
@@ -1272,9 +1417,31 @@ def build_app():
 
             self.start(argv, "contact sheet", after=done)
 
+        def _settle_before_import(self, folder: Path) -> bool:
+            """An import rewrites the files the sheet is showing. Deal with
+            unsaved changes on that same batch first; True means go ahead."""
+            if not self.review_dirty or self.review_batch != folder:
+                return True
+            answer = messagebox.askyesnocancel(
+                APP_TITLE,
+                f"You have unsaved decisions on {folder.name} in the Shortlist tab.\n\n"
+                "Yes — save them first, then import\n"
+                "No — discard them and import\n"
+                "Cancel — don't import",
+                icon="warning")
+            if answer is None:
+                return False
+            if answer:
+                self.save_review()
+                return not self.review_dirty   # a refused save leaves it dirty
+            self.set_review_dirty(False)
+            return True
+
         def import_decisions(self) -> None:
             folder = self._one_batch()
             if folder is None:
+                return
+            if not self._settle_before_import(folder):
                 return
             start = Path.home() / "Downloads"
             chosen = filedialog.askopenfilename(
@@ -1289,6 +1456,8 @@ def build_app():
         def import_csv_reasons(self) -> None:
             folder = self._one_batch()
             if folder is None:
+                return
+            if not self._settle_before_import(folder):
                 return
             culled = (folder / "approved.csv").is_file() and not self.cull_start_over.get()
             csv_name = "approved.csv" if culled else "shortlist.csv"
@@ -1306,7 +1475,12 @@ def build_app():
             """A cull run outside the sheet changed the files it reads."""
             self.refresh_batches()
             if self.review_batch is not None and self.review_batch == folder:
-                self.load_review(force=True)
+                if self.review_dirty:
+                    # Edited while the import ran: don't discard — the disk
+                    # check flags the conflict and Save will ask which to keep.
+                    self._check_disk()
+                else:
+                    self.load_review(force=True)
 
         def run_combine(self, all_batches: bool = False) -> None:
             if all_batches:

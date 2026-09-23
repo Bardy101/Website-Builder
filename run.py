@@ -201,7 +201,8 @@ def action_find() -> None:
         pairs = [(niche, area)]
         reused_radius = None
     else:
-        history = past_searches(cache_dir())
+        # The configured TTL: a shortened cache must not be offered as free.
+        history = past_searches(cache_dir(), ttl_days=config.cache_ttl_days)
         pairs = []
         reused_radius = None
         while True:

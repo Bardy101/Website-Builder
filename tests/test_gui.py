@@ -156,3 +156,51 @@ class TestBatchSummary(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestPairsForRun(unittest.TestCase):
+    """Bug 8: once the run list had entries, what was typed was ignored."""
+
+    def test_no_list_uses_the_typed_pair(self):
+        self.assertEqual(gui.pairs_for_run([], ("physio", "Hitchin")),
+                         ([("physio", "Hitchin")], False))
+
+    def test_nothing_typed_nothing_listed(self):
+        self.assertEqual(gui.pairs_for_run([], ("", "Hitchin")), ([], False))
+
+    def test_typed_pair_not_in_list_is_flagged(self):
+        pairs, left_out = gui.pairs_for_run([("physio", "Hitchin")], ("plumber", "Stevenage"))
+        self.assertEqual(pairs, [("physio", "Hitchin")])
+        self.assertTrue(left_out)
+
+    def test_typed_pair_already_listed_is_not_flagged(self):
+        _, left_out = gui.pairs_for_run([("physio", "Hitchin")], ("Physio", "hitchin"))
+        self.assertFalse(left_out)
+
+    def test_blank_fields_with_a_list_are_not_flagged(self):
+        _, left_out = gui.pairs_for_run([("physio", "Hitchin")], ("", ""))
+        self.assertFalse(left_out)
+
+
+class TestHistoryRespectsTtl(unittest.TestCase):
+    """Bug 9: the "free to repeat" list assumed a 30-day cache."""
+
+    def test_search_older_than_a_shortened_ttl_is_not_offered(self):
+        from pipeline.cache import Cache
+        from pipeline.history import past_searches
+
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Cache(tmp)
+            cache.set("places_search", "physio in Hitchin|r=8000",
+                      {"places": [{"id": "a"}], "niche": "physio",
+                       "area": "Hitchin", "radius_m": 8000})
+            path = next((Path(tmp) / "places_search").glob("*.json"))
+            import json
+
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            payload["fetched"] = (datetime.now(timezone.utc)
+                                  - timedelta(days=10)).isoformat()
+            path.write_text(json.dumps(payload), encoding="utf-8")
+
+            self.assertEqual(len(past_searches(tmp, ttl_days=30)), 1)
+            self.assertEqual(past_searches(tmp, ttl_days=7), [])
