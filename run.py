@@ -512,9 +512,12 @@ def write_env(values: dict[str, str]) -> Path:
         lines.append(f"# {label} — {purpose.splitlines()[0].strip()}")
         lines.append(f"{key}={values.get(key, '')}")
         lines.append("")
-    for key in ("PIPELINE_CACHE_DIR", "PIPELINE_BATCHES_DIR", "PIPELINE_CACHE_TTL_DAYS"):
-        if key in values:
-            lines.append(f"{key}={values[key]}")
+    # Everything else — folders, your business name, anything added by
+    # hand — is kept as it was, not dropped because this list doesn't know it.
+    managed = {key for key, *_ in KEY_INFO}
+    for key, value in values.items():
+        if key not in managed:
+            lines.append(f"{key}={value}")
     env_path.write_text("\n".join(lines).rstrip() + "\n", encoding="utf-8")
     return env_path
 
@@ -738,6 +741,22 @@ def action_contactsheet() -> None:
         print("shortlist' to apply the downloaded decisions.json.")
 
 
+def action_mockups() -> None:
+    """Webflow briefs for everything kept in a batch."""
+    folder = choose_batch("make Webflow briefs for")
+    if folder is None:
+        return
+    import mockup
+
+    try:
+        mockup.main(["--batch", str(folder), "--approved"])
+    except SystemExit as exc:
+        print(exc.code if isinstance(exc.code, str) else "")
+        return
+    print("\nEach business's brief.html is in its folder under mockup/ — open it,")
+    print("copy the prompt into Webflow's AI Site Builder, then work down the page.")
+
+
 def action_window() -> None:
     """Hand over to the window version, which does everything this menu does."""
     try:
@@ -761,6 +780,7 @@ MENU = [
     ("5", "Open a shortlist in your spreadsheet app", action_open),
     ("6", "Tune the scoring from your decisions", action_tune),
     ("7", "Setup & configuration (keys, checks, tests)", action_config),
+    ("8", "Webflow briefs for the businesses you kept", action_mockups),
 ]
 
 

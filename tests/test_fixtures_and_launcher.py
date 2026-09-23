@@ -148,6 +148,21 @@ class TestEnvSetup(unittest.TestCase):
         self.assertEqual(values["GOOGLE_PLACES_API_KEY"], "keep-me")
         self.assertEqual(values["PAGESPEED_API_KEY"], "new-speed-key")
 
+    def test_settings_it_does_not_manage_survive_a_key_save(self):
+        # Saving keys used to drop anything not on its own list — your
+        # business name, for one, which the mockup banner needs.
+        def go(run):
+            existing = run.read_existing_env()
+            existing["GOOGLE_PLACES_API_KEY"] = "new"
+            run.write_env(existing)
+            return run.read_existing_env()
+
+        values = self._with_env(
+            "YOUR_BUSINESS_NAME=Hitchin Web Studio\nPIPELINE_CACHE_DIR=D:/cache\n", go)
+        self.assertEqual(values["YOUR_BUSINESS_NAME"], "Hitchin Web Studio")
+        self.assertEqual(values["PIPELINE_CACHE_DIR"], "D:/cache")
+        self.assertEqual(values["GOOGLE_PLACES_API_KEY"], "new")
+
     def test_quoted_values_are_unquoted(self):
         values = self._with_env(
             'GOOGLE_PLACES_API_KEY="quoted-key"\n',

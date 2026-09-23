@@ -78,6 +78,14 @@ class TestOtherCommands(unittest.TestCase):
         self.assertNotIn("--full", gui.combine_command([Path("b1")]))
         self.assertNotIn("--niche", gui.combine_command([Path("b1")]))
 
+    def test_mockup_one_or_every_kept(self):
+        self.assertEqual(gui.mockup_command(Path("b"), ["P1", "P2"]),
+                         ["mockup.py", "--batch", "b", "--place", "P1", "--place", "P2"])
+        self.assertEqual(gui.mockup_command(Path("b"), approved=True),
+                         ["mockup.py", "--batch", "b", "--approved"])
+        with self.assertRaises(ValueError):
+            gui.mockup_command(Path("b"), [])
+
     def test_tune_and_setup(self):
         self.assertEqual(gui.tune_command([Path("b1"), Path("b2")]),
                          ["tune.py", "--batch", "b1", "b2"])

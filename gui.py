@@ -177,6 +177,19 @@ def tune_command(batches: list[Path], *, apply: bool = False) -> list[str]:
     return ["tune.py", "--batch"] + [str(b) for b in batches] + (["--apply"] if apply else [])
 
 
+def mockup_command(batch: Path, place_ids: Optional[list[str]] = None, *,
+                   approved: bool = False) -> list[str]:
+    """Webflow briefs for the given businesses, or every kept one."""
+    argv = ["mockup.py", "--batch", str(batch)]
+    if approved:
+        return argv + ["--approved"]
+    if not place_ids:
+        raise ValueError("no business to brief")
+    for place_id in place_ids:
+        argv += ["--place", place_id]
+    return argv
+
+
 def check_setup_command() -> list[str]:
     return ["-c", "import run; run.action_check()"]
 
@@ -1069,6 +1082,9 @@ def build_app():
             if info.maps_url:
                 ttk.Button(links, text="Google Maps",
                            command=lambda: self._open_url(info.maps_url)).pack(side=tk.LEFT, padx=6)
+            if editable:
+                ttk.Button(links, text="Webflow brief", style="Accent.TButton",
+                           command=lambda: self.webflow_brief(row)).pack(side=tk.LEFT)
 
             if editable:
                 # Decide on this one, right here.
@@ -1683,6 +1699,12 @@ def build_app():
             ttk.Checkbutton(s, text="start over from the original shortlist",
                             variable=self.cull_start_over).pack(anchor="w")
 
+            s = section("Mock up")
+            ttk.Button(s, text="Webflow briefs for every kept one",
+                       command=self.run_mockups).pack(fill=tk.X, pady=1)
+            ttk.Label(s, text="Or one at a time: 'Webflow brief' in the\nShortlist tab copies its prompt for you.",
+                      style="Small.TLabel", justify="left").pack(anchor="w", pady=(4, 0))
+
             s = section("Combine (Ctrl-click several)")
             grid = ttk.Frame(s)
             grid.pack(fill=tk.X)
@@ -1740,14 +1762,28 @@ def build_app():
             ttk.Button(bar, text="Check setup", command=self.run_check).pack(side=tk.RIGHT, padx=6)
 
             where = ttk.LabelFrame(f, text="Where to get them", padding=10)
-            where.grid(row=1, column=0, sticky="ew", pady=(10, 0))
+            where.grid(row=2, column=0, sticky="ew", pady=(10, 0))
             for key, label, _purpose, howto in menu.KEY_INFO:
                 text = " ".join(line.strip() for line in howto.splitlines())
                 ttk.Label(where, text=f"{label}: {text}", wraplength=880, justify="left",
                           foreground="#333").pack(anchor="w", pady=(0, 6))
 
+            you = ttk.LabelFrame(f, text="You", padding=10)
+            you.grid(row=1, column=0, sticky="ew", pady=(10, 0))
+            you.columnconfigure(1, weight=1)
+            ttk.Label(you, text="Your business name", font=("", 9, "bold")).grid(
+                row=0, column=0, sticky="w", padx=(0, 10))
+            self.your_business = tk.StringVar(value=existing.get(
+                "YOUR_BUSINESS_NAME") or os.environ.get("YOUR_BUSINESS_NAME", ""))
+            ttk.Entry(you, textvariable=self.your_business).grid(row=0, column=1, sticky="ew")
+            ttk.Button(you, text="Save", command=self.save_your_business).grid(
+                row=0, column=2, padx=(6, 0))
+            ttk.Label(you, text="Shown on every mockup's banner: \"Design concept for …, "
+                      "prepared by <this>. Not a live website.\"", foreground="#555",
+                      wraplength=680, justify="left").grid(row=1, column=1, sticky="w")
+
             paths = ttk.LabelFrame(f, text="Folders", padding=10)
-            paths.grid(row=2, column=0, sticky="ew", pady=(10, 0))
+            paths.grid(row=3, column=0, sticky="ew", pady=(10, 0))
             cache = menu.cache_dir()
             ttk.Label(paths, text=f"Batches:  {menu.batches_dir().resolve()}").pack(anchor="w")
             ttk.Label(paths, text=f"Cache:    {cache}   — keep this folder: it is what makes "
@@ -2146,6 +2182,40 @@ def build_app():
 
             self.start(argv, "contact sheet", after=done)
 
+        def webflow_brief(self, row) -> None:
+            """Build this business's Webflow brief, put the prompt on the
+            clipboard and open the build sheet — paste, and Webflow builds."""
+            if self.review_batch is None:
+                return
+            folder = self.review_batch
+            argv = mockup_command(folder, [row.place_id])
+            out = folder / row.place_id / "mockup"
+
+            def done(code: int) -> None:
+                prompt, sheet = out / "prompt.txt", out / "brief.html"
+                if code != 0 or not prompt.is_file():
+                    return
+                self.clipboard_clear()
+                self.clipboard_append(prompt.read_text(encoding="utf-8"))
+                if sheet.is_file():
+                    self._open(sheet)
+                self._log_line("The prompt is on your clipboard — in Webflow, start a new "
+                               "site with the AI Site Builder and paste it.")
+                self._log_line("The page that opened has everything else, with a Copy "
+                               "button on each piece.")
+
+            self.start(argv, f"Webflow brief for {row.get('name') or row.place_id}", after=done)
+
+        def run_mockups(self) -> None:
+            folder = self._one_batch()
+            if folder is None:
+                return
+            if not (folder / "approved.csv").is_file():
+                messagebox.showinfo(APP_TITLE, "Nothing kept in this batch yet — keep some "
+                                    "in the Shortlist tab first.")
+                return
+            self.start(mockup_command(folder, approved=True), "Webflow briefs")
+
         def _settle_before_import(self, folder: Path) -> bool:
             """An import rewrites the files the sheet is showing. Deal with
             unsaved changes on that same batch first; True means go ahead."""
@@ -2279,6 +2349,13 @@ def build_app():
             self._log_line(f"Keys written to {path}")
             self.refresh_history()
             messagebox.showinfo(APP_TITLE, f"Saved to {path.name}. Use 'Test keys' to check they work.")
+
+        def save_your_business(self) -> None:
+            values = dict(menu.read_existing_env())
+            values["YOUR_BUSINESS_NAME"] = self.your_business.get().strip()
+            path = menu.write_env(values)
+            os.environ["YOUR_BUSINESS_NAME"] = values["YOUR_BUSINESS_NAME"]
+            self._log_line(f"Your business name saved to {path.name}.")
 
         def run_check(self) -> None:
             self.start(check_setup_command(), "setup check")
