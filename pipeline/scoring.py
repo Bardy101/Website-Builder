@@ -115,6 +115,17 @@ def looks_like_chain(name: str, chain_names: list[str]) -> bool:
     return False
 
 
+def modern_platforms(weights: "Weights") -> set[str]:
+    """Platforms that mean someone pays for and maintains the site.
+
+    weights.json may list them (tune.py can propose additions from your
+    culls); otherwise the built-in set. Detection is unaffected — this only
+    decides which detected platforms earn the modern_platform penalty.
+    """
+    listed = (weights.raw or {}).get("modern_platforms")
+    return {str(p).lower() for p in listed} if listed else set(MODERN_PLATFORMS)
+
+
 # Short words for each staleness flag, for exclusion details a human reads.
 _FLAG_WORDS = {
     "no_viewport": "no mobile viewport",
@@ -232,7 +243,7 @@ def score_business(business: dict[str, Any], weights: Weights) -> ScoreResult:
 
         # A recognised managed platform means someone pays for this site.
         platform = (business.get("staleness") or {}).get("platform_hint")
-        if platform in MODERN_PLATFORMS:
+        if platform in modern_platforms(weights):
             breakdown["modern_platform"] = sig.get("modern_platform", -15)
 
     rating = business.get("rating")

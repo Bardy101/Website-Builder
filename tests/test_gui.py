@@ -271,3 +271,23 @@ class TestPresentation(unittest.TestCase):
         self.assertEqual(gui.log_tag("[finished with exit code 0]"), ("ok",))
         self.assertEqual(gui.log_tag("b1: saved 4 approved, 2 rejected"), ("ok",))
         self.assertEqual(gui.log_tag("Searching Places for 'physio'…"), ())
+
+
+class TestTuningCommands(unittest.TestCase):
+    def test_min_site_points_flag(self):
+        argv = gui.find_command([("physio", "Hitchin")], radius=8000, top=25,
+                                min_site_points=35)
+        self.assertEqual(argv[argv.index("--min-site-points") + 1], "35")
+        self.assertNotIn("--min-site-points",
+                         gui.find_command([("physio", "Hitchin")], radius=8000, top=25))
+
+    def test_min_site_points_zero_is_passed(self):
+        # 0 is a real choice (keep any flawed site), not "unset".
+        argv = gui.find_command([("physio", "Hitchin")], radius=8000, top=25,
+                                min_site_points=0)
+        self.assertIn("--min-site-points", argv)
+
+    def test_tune_apply(self):
+        self.assertEqual(gui.tune_command([Path("b1")], apply=True),
+                         ["tune.py", "--batch", "b1", "--apply"])
+        self.assertNotIn("--apply", gui.tune_command([Path("b1")]))

@@ -517,13 +517,45 @@ line) if you want a fresh pass over everything. Rejections accumulate in
 ./tune.py --batch batches/*/        # pool several batches
 ```
 
-No machine learning: a frequency table. Per reason code, the average of each
-machine-visible signal among rejected businesses versus approved ones. Where a
-cluster is clear it proposes a threshold change against `weights.json` — you
-apply it by hand. It stays quiet until it has at least three cases of a reason
-code, so early noise doesn't move your weights.
+```bash
+./tune.py --batch batches/*/ --apply      # write the proposals, after a backup
+```
 
-Only worth running once you have rejections to learn from, i.e. after batch two.
+No machine learning: a frequency table. For each reason code it compares what
+was found on the businesses you rejected — which site problems fired, the
+points they add up to, platform, how long since the last review — against the
+ones you kept, and proposes changes to `weights.json` where a cluster is
+clear. In the window: **What have my culls taught it?** and **Apply tune's
+suggestions…** on the Batches tab.
+
+**Teaching it to stop bringing you good sites.** Cull a good-looking site as
+`site_fine`. Once there are three or more, it looks at what they had in
+common:
+
+- If one signal fires on most of them and few of your keeps — say every site
+  you called fine lacked HTTPS but none you kept did — it proposes weakening
+  that signal.
+- Only if no single signal is to blame, it proposes raising the
+  `min_site_points` bar. Never both: each fixes the same leak on its own.
+- If they share a platform, it proposes treating it as a maintained one.
+
+Every proposal is **simulated on your own culls first**, and the reason says
+the result in counts: "At 5, 4 of those 4 would fall below the 25-point bar
+and stay off the list, and 0 of your keeps would." A change that sounds right
+but wouldn't move them is not proposed, and none may cost more than a fifth
+of the sites you kept.
+
+It also proposes a shorter dormancy window if your `winding_down` culls
+cluster at a review age, and a higher few-reviews bar from `too_small` culls.
+It stays quiet until a reason code has three cases.
+
+`--apply` copies `weights.json` to `weights.json.bak-<date>` first, then
+writes the change and bumps `_version`. New finds use it at once; combine a
+batch to re-score it under the new weights.
+
+(An earlier version compared PageSpeed mobile scores and proposed a
+`mobile_score_dated_max` setting that nothing read — scoring had stopped using
+mobile score, and the tuner hadn't followed.)
 
 ---
 
@@ -551,6 +583,7 @@ later batch performs worse you can see what moved.
 | Chain / franchise name match | exclude | Head office decides, not the manager |
 | No review in 365 days | exclude | Dead listing, moved practice or a registered-office address |
 | Site verdict `fine` | exclude | Nothing wrong with it, so nothing to sell |
+| Measured site with under 25 points of problems | exclude (as `fine`) | Too little wrong to sell a redesign on — see below |
 
 ### The two selection rules
 
@@ -577,17 +610,34 @@ the screenshot, the Companies House lookup and the About-page read. Chains
 and closed businesses are the ones screened before the details call, from
 fields the search does return.
 
-**`fine`** excludes only a site that was actually measured and came back clean.
-A site whose fetch failed is `unknown`, not `fine`, and stays in the list.
+**`fine`** excludes a site that was measured and came back clean — and,
+since live runs kept surfacing good-looking sites, one with **too little wrong
+to sell a redesign on**. A measured site needs `min_site_points` (25) of
+problems: one strong sign (not built for phones, 25) or two weaker ones (15
+each). A lone stale footer year — the commonest way a current, good-looking
+site used to reach the list, because footers go un-updated for years — is 15,
+so it isn't enough. The excluded list says what was found: "only 15 points
+wrong (old copyright year); needs 25".
+
+**Sites that block the check are measured anyway.** A site that answers the
+direct fetch with a 403 or a bot challenge used to come out `unknown` and sit
+on the list unjudged. The screenshot step already loads every site in a real
+browser, which those walls let through, so the same checks now run on the
+page the browser saw — including asking the browser whether any stylesheet
+has media queries, since it has loaded ones a plain fetch can't reach. The
+business pane notes "checked in a browser". A site the browser couldn't load
+either stays `unknown`: nothing is inferred without a page.
 
 To loosen either for one run, without editing `weights.json`:
 
 ```bash
 ./find.py --niche physiotherapist --area Hitchin --keep-dormant --keep-fine
 ./find.py --niche physiotherapist --area Hitchin --dormant-days 730
+./find.py --niche physiotherapist --area Hitchin --min-site-points 40   # stricter
 ```
 
-In the window they are the two tick boxes under **Selection rules**.
+In the window they are under **Selection rules**: the two tick boxes, the
+dormancy window, and "A site needs [25] points of problems".
 
 **Every exclusion is written to `excluded.csv`** in the batch folder, with the
 reason, the detail behind it (`last review 2024-03-01`), the review count and

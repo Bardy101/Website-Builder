@@ -79,10 +79,19 @@ Current task section is the main way this repo becomes confusing.
     missing `review_count` is a search stub, not a dead business — so it
     fires after the Place Details call (which it therefore does not save) and
     before every other lookup (which it does). Every exclusion is written to
-    `excluded.csv` in the batch folder with its reason and detail; a lookup
+    `excluded.csv` in the batch folder with its reason and detail. `fine`
+    also covers a measured site with under `min_site_points` (25) of
+    problems — one strong sign or two weak ones — so a lone stale footer year
+    no longer lists a good site. Sites whose direct fetch was blocked are
+    measured from the page the screenshot browser saved
+    (`recheck_from_browser`), instead of passing as `unknown`. A lookup
     that fails is recorded per step in `lookup_errors.csv` and never blocks
     the business's other lookups. `--keep-dormant`,
     `--keep-fine` and `--dormant-days N` loosen a single run.
+  - `tune.py` learns from the current model (staleness flags, site points,
+    platform, review age), simulates every proposal on the operator's own
+    culls before offering it, and `--apply` writes it to `weights.json`
+    after a dated backup. `modern_platforms` may be listed in weights.json.
   - Also present beyond the spec's phase 0: `combine.py` (merge batches by
     niche or town, re-scoring under current weights), website contact lookup
     reconciled against Companies House directors (spec section 5 step 2),

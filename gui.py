@@ -88,6 +88,7 @@ def find_command(
     keep_dormant: bool = False,
     keep_fine: bool = False,
     dormant_days: Optional[int] = None,
+    min_site_points: Optional[int] = None,
     refresh: bool = False,
     fixture: Optional[Path] = None,
     config_path: Optional[Path] = None,
@@ -118,6 +119,8 @@ def find_command(
         argv.append("--keep-fine")
     if dormant_days:
         argv += ["--dormant-days", str(dormant_days)]
+    if min_site_points is not None:
+        argv += ["--min-site-points", str(min_site_points)]
     if refresh:
         argv.append("--refresh")
     if fixture is not None:
@@ -168,10 +171,10 @@ def combine_command(
     return argv
 
 
-def tune_command(batches: list[Path]) -> list[str]:
+def tune_command(batches: list[Path], *, apply: bool = False) -> list[str]:
     if not batches:
         raise ValueError("nothing to tune from")
-    return ["tune.py", "--batch"] + [str(b) for b in batches]
+    return ["tune.py", "--batch"] + [str(b) for b in batches] + (["--apply"] if apply else [])
 
 
 def check_setup_command() -> list[str]:
@@ -777,7 +780,7 @@ def build_app():
                       foreground="#666").grid(row=5, column=0, sticky="w", pady=(2, 4))
             ttk.Checkbutton(right, text="Keep dormant listings",
                             variable=self.opt_keep_dormant).grid(row=6, column=0, sticky="w", pady=1)
-            ttk.Checkbutton(right, text="Keep sites rated 'fine'",
+            ttk.Checkbutton(right, text="Keep sites with little wrong ('fine')",
                             variable=self.opt_keep_fine).grid(row=7, column=0, sticky="w", pady=1)
             dorm = ttk.Frame(right)
             dorm.grid(row=8, column=0, sticky="w", pady=(2, 0))
@@ -786,14 +789,25 @@ def build_app():
             self.dormant_days.set(int(self._weights_threshold("dormant_after_days", 365)))
             self.dormant_days.pack(side=tk.LEFT, padx=4)
             ttk.Label(dorm, text="days without a review").pack(side=tk.LEFT)
+            bar = ttk.Frame(right)
+            bar.grid(row=9, column=0, sticky="w", pady=(4, 0))
+            ttk.Label(bar, text="A site needs").pack(side=tk.LEFT)
+            self.min_points = ttk.Spinbox(bar, from_=0, to=100, increment=5, width=5)
+            self.min_points.set(int(self._weights_threshold("min_site_points", 25)))
+            self.min_points.pack(side=tk.LEFT, padx=4)
+            ttk.Label(bar, text="points of problems").pack(side=tk.LEFT)
+            ttk.Label(right, text="25 = one strong sign (not built for phones) or two weak "
+                      "ones.\nA stale footer year alone is 15, so it isn't enough.",
+                      style="Small.TLabel", justify="left").grid(
+                row=10, column=0, sticky="w", padx=(2, 0))
 
-            ttk.Separator(right).grid(row=9, column=0, sticky="ew", pady=8)
+            ttk.Separator(right).grid(row=11, column=0, sticky="ew", pady=8)
             self.opt_refresh = tk.BooleanVar(value=False)
             ttk.Checkbutton(right, text="Ignore the 30-day cache and re-fetch",
                             variable=self.opt_refresh, command=self.update_cost).grid(
-                row=10, column=0, sticky="w")
+                row=12, column=0, sticky="w")
             ttk.Label(right, text="costs real API calls for data you already have",
-                      foreground="#666").grid(row=11, column=0, sticky="w", padx=(20, 0))
+                      foreground="#666").grid(row=13, column=0, sticky="w", padx=(20, 0))
 
             # Run --------------------------------------------------------------
             go = ttk.Frame(f, padding=(0, 10, 0, 0))
@@ -1689,7 +1703,10 @@ def build_app():
             ttk.Button(s, text="Combine all", command=lambda: self.run_combine(all_batches=True)).pack(fill=tk.X, pady=1)
 
             s = section("Learn")
-            ttk.Button(s, text="Tune scoring from every cull", command=self.run_tune).pack(fill=tk.X, pady=1)
+            ttk.Button(s, text="What have my culls taught it?", command=self.run_tune).pack(fill=tk.X, pady=1)
+            ttk.Button(s, text="Apply tune's suggestions…", command=self.apply_tune).pack(fill=tk.X, pady=1)
+            ttk.Label(s, text="Cull good-looking sites as 'site_fine' — that's\nwhat teaches it to stop bringing them.",
+                      style="Small.TLabel", justify="left").pack(anchor="w", pady=(4, 0))
 
         def _build_setup(self) -> None:
             # Scrollable: on a laptop screen the folder paths fell off the end.
@@ -1996,6 +2013,7 @@ def build_app():
                 radius = int(float(self.radius.get()))
                 top = int(float(self.top.get()))
                 dormant = int(float(self.dormant_days.get()))
+                min_points = int(float(self.min_points.get()))
             except ValueError:
                 messagebox.showinfo(APP_TITLE, "Radius, rows and dormant days must be numbers.")
                 return
@@ -2023,6 +2041,8 @@ def build_app():
                 owner_lookup=self.opt_owner.get(), site_contacts=self.opt_contacts.get(),
                 keep_dormant=self.opt_keep_dormant.get(), keep_fine=self.opt_keep_fine.get(),
                 dormant_days=dormant if dormant != int(self._weights_threshold("dormant_after_days", 365)) else None,
+                min_site_points=(min_points if min_points != int(
+                    self._weights_threshold("min_site_points", 25)) else None),
                 refresh=self.opt_refresh.get() and not demo, fixture=fixture,
                 config_path=config_path,
             )
@@ -2215,6 +2235,27 @@ def build_app():
                 messagebox.showinfo(APP_TITLE, "No batches yet.")
                 return
             self.start(tune_command(batches), "tune")
+
+        def apply_tune(self) -> None:
+            """Write the tuner's proposals into weights.json, after asking."""
+            batches = menu.list_batches()
+            if not batches:
+                messagebox.showinfo(APP_TITLE, "No batches yet.")
+                return
+            if not messagebox.askokcancel(
+                APP_TITLE,
+                "This writes tune's suggestions into weights.json, so every find from "
+                "now on uses them.\n\nThe current weights.json is copied first "
+                "(weights.json.bak-<date>), so it can be put back.\n\nRun 'What have "
+                "my culls taught it?' first if you want to read them. Apply now?"):
+                return
+
+            def done(code: int) -> None:
+                # The Find tab's controls show weights.json's values; refresh them.
+                self.min_points.set(int(self._weights_threshold("min_site_points", 25)))
+                self.dormant_days.set(int(self._weights_threshold("dormant_after_days", 365)))
+
+            self.start(tune_command(batches, apply=True), "apply tune", after=done)
 
         # -- setup tab --------------------------------------------------------
 
