@@ -230,42 +230,221 @@ class TestValidation(ReviewTestCase):
             row.set("lead_score", "999")
 
 
-class TestSidecar(ReviewTestCase):
-    def test_corrupt_sidecar_costs_notes_not_decisions(self):
+class TestLegacySidecar(ReviewTestCase):
+    """review.json is retired: read as a fallback, removed on the next save."""
+
+    def write_legacy(self, rows):
+        path = review.sidecar_path(Batch(self.batch.path))
+        path.write_text(json.dumps({"saved": utcnow(), "rows": rows}), encoding="utf-8")
+        return path
+
+    def test_legacy_notes_are_read_when_the_row_has_no_notes_column(self):
+        # approved.csv written by an old cull.py, before the notes column.
+        self.batch.approved_path.write_text(
+            "lead_score,name,place_id\n70,Alpha Physio,P1\n", encoding="utf-8")
+        self.write_legacy({"P1": {"notes": "from the old side-car"}})
+        self.assertEqual(self.reload().by_id("P1").notes, "from the old side-car")
+
+    def test_legacy_sidecar_removed_on_save_and_notes_kept(self):
+        self.batch.approved_path.write_text(
+            "lead_score,name,place_id\n70,Alpha Physio,P1\n", encoding="utf-8")
+        path = self.write_legacy({"P1": {"notes": "keep me"}})
+        review.save(self.batch, self.reload())
+        self.assertFalse(path.is_file())
+        self.assertEqual(self.reload().by_id("P1").notes, "keep me")
+
+    def test_corrupt_sidecar_is_ignored(self):
         sheet = self.reload()
         sheet.by_id("P1").decision = review.CULL
         sheet.by_id("P1").reason = "chain"
-        sheet.by_id("P2").set("notes", "keep an eye on this one")
         review.save(self.batch, sheet)
-
         review.sidecar_path(Batch(self.batch.path)).write_text("{ not json",
                                                               encoding="utf-8")
-        back = self.reload()
-        self.assertEqual(back.by_id("P1").decision, review.CULL)
-        self.assertEqual(back.by_id("P2").notes, "")
+        self.assertEqual(self.reload().by_id("P1").decision, review.CULL)
 
-    def test_sidecar_removed_when_nothing_left_to_remember(self):
-        sheet = self.reload()
-        sheet.by_id("P1").set("notes", "temporary")
-        review.save(self.batch, sheet)
-        path = review.sidecar_path(Batch(self.batch.path))
-        self.assertTrue(path.is_file())
-
-        back = self.reload()
-        for row in back.rows:
-            row.set("notes", "")
-            row.set("address_to", "")
-        review.save(self.batch, back)
-        self.assertFalse(path.is_file())
-
-    def test_sidecar_is_valid_json_with_a_saved_stamp(self):
+    def test_save_writes_no_sidecar(self):
         sheet = self.reload()
         sheet.by_id("P1").set("notes", "n")
         review.save(self.batch, sheet)
-        data = json.loads(review.sidecar_path(
-            Batch(self.batch.path)).read_text(encoding="utf-8"))
-        self.assertIn("saved", data)
-        self.assertEqual(data["rows"]["P1"]["notes"], "n")
+        self.assertFalse(review.sidecar_path(Batch(self.batch.path)).is_file())
+
+
+class TestSpreadsheetEdits(ReviewTestCase):
+    """Bug 1: edits made in the spreadsheet were ignored, then overwritten."""
+
+    def excel_edit(self, place_id, **changes):
+        """Open approved.csv, change cells, save — what the operator does."""
+        import csv
+
+        rows = self.batch.read_shortlist(path=self.batch.approved_path)
+        for row in rows:
+            if row["place_id"] == place_id:
+                row.update(changes)
+        with self.batch.approved_path.open("w", newline="", encoding="utf-8") as fh:
+            w = csv.DictWriter(fh, fieldnames=list(rows[0].keys()))
+            w.writeheader()
+            w.writerows(rows)
+
+    def test_spreadsheet_edit_is_what_the_sheet_loads(self):
+        review.save(self.batch, self.reload())
+        self.excel_edit("P1", address_to="Jay (clinic manager)", notes="call first")
+        back = self.reload()
+        self.assertEqual(back.by_id("P1").get("address_to"), "Jay (clinic manager)")
+        self.assertEqual(back.by_id("P1").notes, "call first")
+
+    def test_spreadsheet_edit_survives_a_later_save(self):
+        review.save(self.batch, self.reload())
+        self.excel_edit("P1", address_to="Jay (clinic manager)")
+        sheet = self.reload()
+        sheet.by_id("P3").decision = review.CULL
+        sheet.by_id("P3").reason = "too_small"
+        review.save(self.batch, sheet)
+        self.assertEqual(self.reload().by_id("P1").get("address_to"),
+                         "Jay (clinic manager)")
+
+    def test_clearing_a_note_in_the_spreadsheet_clears_it(self):
+        sheet = self.reload()
+        sheet.by_id("P1").set("notes", "old note")
+        review.save(self.batch, sheet)
+        self.excel_edit("P1", notes="")
+        self.assertEqual(self.reload().by_id("P1").notes, "")
+
+    def test_clearing_a_note_in_the_sheet_clears_it(self):
+        sheet = self.reload()
+        sheet.by_id("P1").set("notes", "old note")
+        review.save(self.batch, sheet)
+        back = self.reload()
+        back.by_id("P1").set("notes", "")
+        review.save(self.batch, back)
+        self.assertEqual(self.reload().by_id("P1").notes, "")
+
+    def test_measurements_are_not_taken_from_the_spreadsheet(self):
+        # A re-save can reformat a phone number or date; only the columns
+        # that are yours are read back from the file you edited.
+        review.save(self.batch, self.reload())
+        self.excel_edit("P1", lead_score="999", phone="1462000000")
+        self.assertEqual(self.reload().by_id("P1").get("lead_score"), "70")
+
+    def test_edit_on_a_culled_row_is_kept_in_its_rejection(self):
+        sheet = self.reload()
+        sheet.by_id("P2").decision = review.CULL
+        sheet.by_id("P2").reason = "gut"
+        sheet.by_id("P2").set("notes", "second site, same owner")
+        review.save(self.batch, sheet)
+        back = self.reload()
+        self.assertEqual(back.by_id("P2").notes, "second site, same owner")
+        # Un-cull it and the note comes with it.
+        back.by_id("P2").decision = review.KEEP
+        back.by_id("P2").reason = ""
+        review.save(self.batch, back)
+        self.assertEqual(self.reload().by_id("P2").notes, "second site, same owner")
+
+    def test_excel_utf8_with_bom_loads(self):
+        review.save(self.batch, self.reload())
+        text = self.batch.approved_path.read_text(encoding="utf-8")
+        self.batch.approved_path.write_bytes(("\ufeff" + text).encode("utf-8"))
+        back = self.reload()
+        self.assertEqual(back.counts()[review.KEEP], 3)
+
+    def test_excel_plain_csv_in_windows_1252_loads(self):
+        self.people[0]["name"] = "Café Physio – Hitchin"
+        self.batch.write_shortlist(business_to_row(b) for b in self.people)
+        review.save(self.batch, self.reload())
+        text = self.batch.approved_path.read_text(encoding="utf-8")
+        self.batch.approved_path.write_bytes(text.encode("cp1252"))
+        back = self.reload()
+        self.assertEqual(back.by_id("P1").name, "Café Physio – Hitchin")
+
+    def test_disk_change_is_detected(self):
+        sheet = self.reload()
+        self.assertFalse(review.changed_on_disk(self.batch, sheet))
+        review.save(self.batch, sheet)
+        # A save updates the sheet's own stamp: not a change from outside.
+        self.assertFalse(review.changed_on_disk(self.batch, sheet))
+        self.excel_edit("P1", notes="edited elsewhere")
+        self.assertTrue(review.changed_on_disk(self.batch, sheet))
+
+
+class TestStartOver(ReviewTestCase):
+    """Bug 3: starting over left the old rejection in force."""
+
+    def test_start_over_clears_an_earlier_rejection(self):
+        sheet = self.reload()
+        sheet.by_id("P2").decision = review.CULL
+        sheet.by_id("P2").reason = "gut"
+        review.save(self.batch, sheet)
+
+        again = self.reload()
+        review.apply_decisions(again, {}, start_over=True)
+        review.save(self.batch, again)
+
+        from pipeline.combine import approved_ids, rejected_ids
+
+        b = Batch(self.batch.path)
+        self.assertEqual(approved_ids(b), {"P1", "P2", "P3"})
+        self.assertEqual(rejected_ids(b), set())
+        self.assertEqual(self.reload().by_id("P2").decision, review.KEEP)
+
+    def test_without_start_over_earlier_culls_stand(self):
+        sheet = self.reload()
+        sheet.by_id("P2").decision = review.CULL
+        sheet.by_id("P2").reason = "gut"
+        review.save(self.batch, sheet)
+        again = self.reload()
+        review.apply_decisions(again, {"P3": "chain"})
+        review.save(self.batch, again)
+        back = self.reload()
+        self.assertEqual(back.by_id("P2").reason, "gut")
+        self.assertEqual(back.by_id("P3").reason, "chain")
+
+    def test_files_left_inconsistent_by_the_old_bug_load_as_keep(self):
+        # What an old cull.py --full left behind: in approved.csv AND rejected.
+        self.batch.write_shortlist((business_to_row(b) for b in self.people),
+                                   path=self.batch.approved_path)
+        self.batch.append_rejection({"place_id": "P2", "name": "Beta Backs",
+                                     "reason": "gut", "rejected_at": utcnow(),
+                                     "row": {}, "business": {}})
+        sheet = self.reload()
+        self.assertEqual(sheet.by_id("P2").decision, review.KEEP)
+        review.save(self.batch, sheet)  # and the next save repairs the files
+        self.assertEqual(self.batch.read_rejections(), [])
+
+
+class TestSorting(ReviewTestCase):
+    def set_reviews(self, counts):
+        sheet = self.reload()
+        for row, n in zip(sheet.rows, counts):
+            row.row["review_count"] = n
+        return sheet
+
+    def test_numbers_sort_as_numbers(self):
+        sheet = self.set_reviews(["9", "120", "22"])
+        review.sort_rows(sheet.rows, "review_count", descending=False)
+        self.assertEqual([r.get("review_count") for r in sheet.rows], ["9", "22", "120"])
+        review.sort_rows(sheet.rows, "review_count", descending=True)
+        self.assertEqual([r.get("review_count") for r in sheet.rows], ["120", "22", "9"])
+
+    def test_blanks_sort_last_both_ways(self):
+        sheet = self.set_reviews(["9", "", "22"])
+        for descending in (False, True):
+            review.sort_rows(sheet.rows, "review_count", descending=descending)
+            self.assertEqual(sheet.rows[-1].get("review_count"), "")
+
+    def test_decision_column_sorts_undecided_first(self):
+        sheet = self.reload()
+        sheet.by_id("P1").decision = review.CULL
+        sheet.by_id("P2").decision = review.KEEP
+        review.sort_rows(sheet.rows, "decision", descending=False)
+        self.assertEqual([r.decision for r in sheet.rows],
+                         [review.UNDECIDED, review.KEEP, review.CULL])
+
+    def test_text_sorts_case_insensitively(self):
+        sheet = self.reload()
+        sheet.by_id("P1").row["name"] = "beta"
+        sheet.by_id("P2").row["name"] = "Alpha"
+        sheet.by_id("P3").row["name"] = "gamma"
+        review.sort_rows(sheet.rows, "name", descending=False)
+        self.assertEqual([r.name for r in sheet.rows], ["Alpha", "beta", "gamma"])
 
 
 class TestCompatibility(ReviewTestCase):

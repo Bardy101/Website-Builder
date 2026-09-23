@@ -40,9 +40,9 @@ try:
         decisions_from_export,
         gut_share,
         reason_counts,
-        split_shortlist,
     )
-    from pipeline.storage import Batch, utcnow
+    from pipeline import review
+    from pipeline.storage import Batch
 except ImportError as exc:
     if "pipeline" not in str(exc):
         raise
@@ -219,37 +219,25 @@ def main(argv=None) -> int:
     else:
         decisions = prompt_decisions(rows, args.keep)
 
-    approved, rejected = split_shortlist(rows, decisions)
-    batch.write_shortlist(approved, path=batch.approved_path)
+    # Written through the review module, which is the one writer of these
+    # files. It rewrites the rejection log rather than appending to it, so
+    # --full really does start over: a business culled on an earlier pass and
+    # kept on this one loses its old rejection, instead of combine and tune
+    # still treating it as culled while approved.csv says keep.
+    sheet = review.load(batch)
+    rejected = review.apply_decisions(sheet, decisions, start_over=args.full)
+    try:
+        result = review.save(batch, sheet)
+    except PermissionError:
+        raise SystemExit(
+            f"Could not write {batch.approved_path.name} — it is open in another "
+            "program (probably your spreadsheet). Close it there and run this again."
+        ) from None
 
-    for row in rejected:
-        business = batch.read_business(row["place_id"]) or {}
-        batch.append_rejection(
-            {
-                "place_id": row["place_id"],
-                "name": row.get("name"),
-                "reason": row["reason"],
-                "rejected_at": utcnow(),
-                "row": {k: v for k, v in row.items() if k != "reason"},
-                "business": business,
-            }
-        )
-
-    counts = reason_counts(rejected)
-    meta = batch.read_meta()
-    meta.setdefault("rejection_reasons", {})
-    for code, n in counts.items():
-        meta["rejection_reasons"][code] = meta["rejection_reasons"].get(code, 0) + n
-    meta["status_counts"] = {
-        **meta.get("status_counts", {}),
-        "approved": len(approved),
-        "rejected": len(batch.read_rejections()),
-    }
-    meta["culled"] = utcnow()
-    batch.write_meta(meta)
-
-    print(f"\nApproved: {len(approved)}  ->  {batch.approved_path}")
-    print(f"Rejected: {len(rejected)}  ->  {batch.rejections_path}")
+    print(f"\nApproved: {result['approved']}  ->  {batch.approved_path}")
+    print(f"Rejected this pass: {len(rejected)}  ->  {batch.rejections_path}"
+          f"   ({result['rejected']} in total)")
+    counts = reason_counts([{"reason": r.reason} for r in rejected])
     if counts:
         print("\nReasons this cull:")
         for code, n in sorted(counts.items(), key=lambda kv: -kv[1]):

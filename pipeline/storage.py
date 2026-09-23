@@ -14,6 +14,7 @@ No database until batch five and it's clearly needed.
 from __future__ import annotations
 
 import csv
+import io
 import json
 import re
 from datetime import date, datetime, timezone
@@ -181,8 +182,7 @@ class Batch:
         target = path or self.shortlist_path
         if not target.is_file():
             return []
-        with target.open(newline="", encoding="utf-8") as fh:
-            return list(csv.DictReader(fh))
+        return read_csv_rows(target)
 
     def append_rejection(self, record: dict) -> None:
         with self.rejections_path.open("a", encoding="utf-8") as fh:
@@ -197,6 +197,25 @@ class Batch:
             if line:
                 out.append(json.loads(line))
         return out
+
+
+def read_csv_rows(path: Path) -> list[dict]:
+    """Read a CSV this pipeline wrote — or that a spreadsheet re-saved.
+
+    Opening approved.csv in Excel and saving it is an intended workflow, and
+    Excel changes the bytes on the way out. "CSV UTF-8" prepends a byte-order
+    mark, which a plain utf-8 read glues onto the first column name. Plain
+    "CSV" saves as Windows-1252, where a name with é, £ or an en dash is not
+    valid utf-8 and the read fails outright. utf-8-sig strips the mark and is
+    identical to utf-8 otherwise; cp1252 is the fallback because it is what
+    Excel writes on the machines this runs on.
+    """
+    raw = path.read_bytes()
+    try:
+        text = raw.decode("utf-8-sig")
+    except UnicodeDecodeError:
+        text = raw.decode("cp1252", errors="replace")
+    return list(csv.DictReader(io.StringIO(text, newline="")))
 
 
 def business_to_row(business: dict) -> dict:

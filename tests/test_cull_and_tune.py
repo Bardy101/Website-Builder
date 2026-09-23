@@ -192,3 +192,43 @@ class TestRecull(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestFullClearsRejections(unittest.TestCase):
+    """Bug 3 through cull.py itself: --full must actually start over."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.batch = Batch.create(self.tmp.name, niche="physio", area="hitchin")
+        self.batch.write_shortlist(
+            [{"place_id": f"id{i}", "name": f"Biz {i}"} for i in range(3)])
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def import_decisions(self, decisions, *, full=False):
+        import contextlib
+        import io
+        import json
+
+        import cull
+
+        path = self.batch.path / "d.json"
+        path.write_text(json.dumps(decisions), encoding="utf-8")
+        argv = ["--batch", str(self.batch.path), "--import", str(path)]
+        if full:
+            argv.append("--full")
+        with contextlib.redirect_stdout(io.StringIO()):
+            cull.main(argv)
+
+    def test_kept_on_a_fresh_pass_is_no_longer_rejected(self):
+        from pipeline.combine import approved_ids, rejected_ids
+
+        self.import_decisions([{"place_id": "id1", "decision": "cull", "reason": "gut"}])
+        self.assertEqual(rejected_ids(Batch(self.batch.path)), {"id1"})
+
+        self.import_decisions([{"place_id": f"id{i}", "decision": "keep"}
+                               for i in range(3)], full=True)
+        b = Batch(self.batch.path)
+        self.assertEqual(approved_ids(b), {"id0", "id1", "id2"})
+        self.assertEqual(rejected_ids(b), set())
