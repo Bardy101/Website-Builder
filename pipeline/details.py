@@ -206,6 +206,8 @@ def build(row: dict, business: Optional[dict] = None, *,
                                      stale.get("uses_table_layout")))),
         ("Platform", _first(row.get("platform_hint"), stale.get("platform_hint"))),
         ("Mobile speed score", _first(row.get("mobile_score"), site.get("mobile_score"))),
+        ("Checked", "in a browser — the site blocked the direct check"
+         if stale.get("source") == "browser" else ""),
     ]))
 
     # -- opening hours ------------------------------------------------------

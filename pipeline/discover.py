@@ -165,6 +165,12 @@ def discover(
                 business["screenshot_path"] = ""
         say(f"  screenshots: {sum(1 for s in shots.values() if s.ok)} of "
             f"{len(shots)} captured")
+        rechecked = recheck_from_browser(
+            pending, screenshots,
+            stale_years=weights.thresholds.get("copyright_stale_years", 3))
+        if rechecked:
+            say(f"  {rechecked} site(s) that blocked the direct check were measured "
+                "from the browser instead")
 
     for business in pending:
         business["addressee"] = decide_addressee(
@@ -194,6 +200,59 @@ def discover(
     top_businesses = businesses[:top]
     rows = [business_to_row(b) for b in top_businesses]
     return DiscoverResult(rows=rows, businesses=top_businesses, excluded=excluded)
+
+
+def recheck_from_browser(businesses: list[dict], capturer, *, stale_years: int = 3) -> int:
+    """Measure sites the direct check couldn't, from the page the browser saw.
+
+    A site that answers a plain HTTP fetch with 403, a bot challenge or a
+    timeout came out "unknown" — and, failing open, stayed on the list
+    unjudged, good-looking sites included. The screenshot step has already
+    loaded each of those pages in a real browser, which sites don't block
+    that way, and saved the rendered HTML. Running the same staleness checks
+    on it turns "unknown" into a real verdict.
+
+    Media queries come from asking the browser, which has loaded every
+    stylesheet; where it couldn't read one (cross-origin) the HTML check
+    stands, and that fails open as before. A site the browser couldn't load
+    either stays unknown. Returns how many were measured this way.
+    """
+    from .screenshots import read_page
+    from .site_checks import SiteCheck, classify_url, verdict_from
+    from .staleness import analyse_staleness
+
+    measured = 0
+    for business in businesses:
+        website = business.get("website")
+        if not website or classify_url(website) != "real":
+            continue
+        if (business.get("staleness") or {}).get("fetch_ok"):
+            continue
+        page = read_page(capturer.page_path_for(business["place_id"]))
+        if page is None:
+            continue
+        # No network here: the page is already in hand, and linked CSS the
+        # direct fetch couldn't reach it won't reach now either.
+        analysis = analyse_staleness(
+            website, prefetched=(page.get("url") or website, page["html"]),
+            fetch=lambda _url, _timeout: None)
+        if not analysis.get("fetch_ok"):
+            continue
+        if page.get("media_queries") is not None:
+            analysis["has_media_queries"] = bool(page["media_queries"])
+        analysis["source"] = "browser"
+        check = SiteCheck(True, False, https=analysis.get("has_https"),
+                          viewport=analysis.get("has_viewport"), staleness=analysis)
+        site = business.get("site_score") or {}
+        business["staleness"] = analysis
+        business["site_score"] = {
+            **site,
+            "verdict": verdict_from(check, stale_years=stale_years),
+            "https": analysis.get("has_https"),
+            "viewport": analysis.get("has_viewport"),
+        }
+        measured += 1
+    return measured
 
 
 def _enrich_one(business, site_checker, companies_house, site_contacts) -> None:

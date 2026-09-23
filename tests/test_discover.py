@@ -370,3 +370,99 @@ class TestLookupIsolation(unittest.TestCase):
             write_batch(batch, DiscoverResult(
                 rows=[], businesses=[{"name": "ok", "place_id": "OK1"}], excluded=[]))
             self.assertFalse((batch.path / "lookup_errors.csv").is_file())
+
+
+class TestBrowserRecheck(unittest.TestCase):
+    """Sites that blocked the direct check are measured from the browser's page,
+    instead of passing through unjudged as 'unknown'."""
+
+    DATED = ("<html><body><table><tr><td>a</td></tr><tr><td>b</td></tr>"
+             "<tr><td>&copy; 2015 Old Clinic</td></tr></table></body></html>")
+    MODERN = ("<html><head><meta name='viewport' content='width=device-width'>"
+              "<style>@media (max-width:600px){h1{font-size:20px}}</style></head>"
+              "<body><h1>New Clinic</h1><p>&copy; 2026</p></body></html>")
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        from pipeline.screenshots import ScreenshotCapturer
+
+        self.capturer = ScreenshotCapturer(cache_dir=Path(self.tmp.name))
+        self.capturer.root.mkdir(parents=True)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def save_page(self, pid, html, url="https://x.example/", media=None):
+        import json
+
+        self.capturer.page_path_for(pid).write_text(json.dumps(
+            {"url": url, "html": html, "media_queries": media}), encoding="utf-8")
+
+    def unknown(self, pid, website="https://x.example"):
+        return {"place_id": pid, "website": website,
+                "site_score": {"verdict": "unknown", "mobile_score": 55},
+                "staleness": {"fetch_ok": False}}
+
+    def recheck(self, businesses):
+        from pipeline.discover import recheck_from_browser
+
+        return recheck_from_browser(businesses, self.capturer)
+
+    def test_dated_site_gets_a_real_verdict(self):
+        b = self.unknown("D1")
+        self.save_page("D1", self.DATED, url="http://x.example/")
+        self.assertEqual(self.recheck([b]), 1)
+        self.assertEqual(b["site_score"]["verdict"], "dated")
+        self.assertEqual(b["staleness"]["source"], "browser")
+        self.assertFalse(b["staleness"]["has_viewport"])
+        self.assertFalse(b["site_score"]["https"])
+        self.assertEqual(b["site_score"]["mobile_score"], 55)   # untouched
+
+    def test_modern_site_comes_out_fine_and_is_then_excluded(self):
+        from pipeline.scoring import Weights, score_business
+
+        b = self.unknown("M1")
+        self.save_page("M1", self.MODERN)
+        self.recheck([b])
+        self.assertEqual(b["site_score"]["verdict"], "fine")
+        b.update({"name": "New Clinic", "business_status": "OPERATIONAL",
+                  "rating": 4.8, "review_count": 40})
+        self.assertEqual(score_business(b, Weights.load(
+            Path(__file__).resolve().parent.parent / "weights.json")).exclude_reason,
+            "site_fine")
+
+    def test_browser_media_query_answer_is_used(self):
+        b = self.unknown("Q1")
+        self.save_page("Q1", self.MODERN, media=False)
+        self.recheck([b])
+        self.assertFalse(b["staleness"]["has_media_queries"])
+
+    def test_unreadable_answer_leaves_the_html_check(self):
+        b = self.unknown("Q2")
+        self.save_page("Q2", self.MODERN, media=None)
+        self.recheck([b])
+        self.assertTrue(b["staleness"]["has_media_queries"])
+
+    def test_no_saved_page_stays_unknown(self):
+        b = self.unknown("N1")
+        self.assertEqual(self.recheck([b]), 0)
+        self.assertEqual(b["site_score"]["verdict"], "unknown")
+
+    def test_already_measured_sites_are_left_alone(self):
+        b = self.unknown("K1")
+        b["staleness"] = {"fetch_ok": True, "has_viewport": True}
+        b["site_score"]["verdict"] = "fine"
+        self.save_page("K1", self.DATED)
+        self.assertEqual(self.recheck([b]), 0)
+        self.assertEqual(b["site_score"]["verdict"], "fine")
+
+    def test_social_and_missing_sites_are_skipped(self):
+        fb = self.unknown("F1", website="https://facebook.com/clinic")
+        none = self.unknown("X1", website=None)
+        self.save_page("F1", self.DATED)
+        self.assertEqual(self.recheck([fb, none]), 0)
+
+    def test_corrupt_page_file_is_ignored(self):
+        b = self.unknown("C1")
+        self.capturer.page_path_for("C1").write_text("{ not json", encoding="utf-8")
+        self.assertEqual(self.recheck([b]), 0)

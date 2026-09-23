@@ -136,3 +136,14 @@ class TestExcluded(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestCheckedInBrowser(unittest.TestCase):
+    def test_browser_measured_site_says_so(self):
+        b = record(staleness={"fetch_ok": True, "has_viewport": False, "source": "browser"})
+        site = section(details.build(business_to_row(b), b), "The website")
+        self.assertIn("blocked the direct check", site["Checked"])
+
+    def test_directly_measured_site_says_nothing(self):
+        b = record()
+        self.assertNotIn("Checked", section(details.build(business_to_row(b), b), "The website"))

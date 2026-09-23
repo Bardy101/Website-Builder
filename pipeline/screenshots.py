@@ -77,6 +77,10 @@ class ScreenshotCapturer:
             self.root / f"{place_id}_mobile.png",
         )
 
+    def page_path_for(self, place_id: str) -> Path:
+        """The rendered page saved alongside the shots — see page_path()."""
+        return page_path(self.paths_for(place_id)[0])
+
     def cached(self, place_id: str) -> Optional[ShotResult]:
         """A usable cached pair, unless a refresh was asked for."""
         if self.refresh:
@@ -201,10 +205,61 @@ class ScreenshotCapturer:
                         page.screenshot(path=str(partial), full_page=False,
                                         type="png")
                         os.replace(partial, out)
+                        if viewport is DESKTOP:
+                            _save_page(page, page_path(desktop))
                     finally:
                         context.close()
             finally:
                 browser.close()
+
+
+def page_path(desktop_png: Path) -> Path:
+    """Where the rendered page for a capture lives: beside its desktop shot."""
+    return desktop_png.with_name(desktop_png.name.replace("_desktop.png", "_page.json"))
+
+
+# Asked of the browser, which has loaded every stylesheet — including ones a
+# plain HTTP fetch cannot read. True/False is evidence; null means some sheets
+# were cross-origin and unreadable, which proves nothing either way.
+_MEDIA_QUERY_PROBE = """() => {
+  let unreadable = false;
+  for (const sheet of Array.from(document.styleSheets)) {
+    let rules;
+    try { rules = sheet.cssRules; } catch (e) { unreadable = true; continue; }
+    for (const rule of Array.from(rules || [])) {
+      if (rule.type === CSSRule.MEDIA_RULE) return true;
+    }
+    if (sheet.media && sheet.media.mediaText) return true;
+  }
+  return unreadable ? null : false;
+}"""
+
+
+def _save_page(page, path: Path) -> None:
+    """Keep what the browser saw, so a site that blocked the direct check
+    can still be measured. Best effort: a failure here never fails a capture."""
+    try:
+        try:
+            media = page.evaluate(_MEDIA_QUERY_PROBE)
+        except Exception:  # noqa: BLE001
+            media = None
+        payload = {"url": page.url, "html": page.content(), "media_queries": media}
+        partial = path.with_name(path.name + ".part")
+        partial.write_text(json.dumps(payload), encoding="utf-8")
+        os.replace(partial, path)
+    except Exception:  # noqa: BLE001
+        pass
+
+
+def read_page(path: Path) -> Optional[dict]:
+    """A saved page, or None if absent or unreadable."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    if not isinstance(data, dict) or not data.get("html"):
+        return None
+    return data
 
 
 def browser_ready() -> tuple[bool, str]:
