@@ -878,7 +878,10 @@ def build_app():
             top = ttk.Frame(f)
             top.grid(row=0, column=0, sticky="ew")
             ttk.Label(top, text="Batch", style="H2.TLabel").pack(side=tk.LEFT)
-            self.review_pick = ttk.Combobox(top, state="readonly", width=36)
+            # postcommand: re-read the folder each time the list drops down,
+            # so a batch made elsewhere since start-up is there to pick.
+            self.review_pick = ttk.Combobox(top, state="readonly", width=36,
+                                            postcommand=lambda: self.refresh_review_picker())
             self.review_pick.pack(side=tk.LEFT, padx=(8, 8))
             self.review_pick.bind("<<ComboboxSelected>>", lambda _e: self.load_review())
             ttk.Button(top, text="Reload", command=self.reload_review).pack(side=tk.LEFT)
@@ -1296,8 +1299,15 @@ def build_app():
 
         def _selected_review_folder(self) -> Optional[Path]:
             name = self.review_pick.get()
-            return next((f for f in getattr(self, "review_folders", [])
-                         if f.name == name), None)
+            found = next((f for f in getattr(self, "review_folders", [])
+                          if f.name == name), None)
+            if found is None and name:
+                # Made since the picker was last filled — a combine, or a
+                # find run from the menu or command line. Look again rather
+                # than leave the previous batch on screen under this name.
+                self.refresh_review_picker()
+                found = next((f for f in self.review_folders if f.name == name), None)
+            return found
 
         def _confirm_discard(self, doing: str) -> bool:
             """True if there is nothing unsaved, or the operator says discard.
@@ -1323,6 +1333,12 @@ def build_app():
             """
             folder = self._selected_review_folder()
             if folder is None:
+                name = self.review_pick.get()
+                if name:
+                    self._log_line(f"{name}: not found in {menu.batches_dir()} "
+                                   "— was it moved or deleted?")
+                    if self.review_batch is not None:
+                        self.review_pick.set(self.review_batch.name)
                 return
             if not force and not self._confirm_discard("Opening another batch"):
                 # Put the picker back where it was.
@@ -2111,6 +2127,9 @@ def build_app():
         # -- batches tab ------------------------------------------------------
 
         def refresh_batches(self) -> None:
+            # One list of batches, so the Shortlist picker never lags the
+            # Batches tab (it used to miss anything made after start-up).
+            self.refresh_review_picker()
             self.batch_tree.delete(*self.batch_tree.get_children())
             for folder in menu.list_batches():
                 try:
