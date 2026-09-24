@@ -546,6 +546,12 @@ and stay off the list, and 0 of your keeps would." A change that sounds right
 but wouldn't move them is not proposed, and none may cost more than a fifth
 of the sites you kept.
 
+**Each business counts once.** A combined sheet holds copies of its source
+batches' businesses, so a business can be judged in several folders — kept
+in the Hitchin batch, say, then culled on a second look in the combined one.
+Tune counts your most recent decision only (by when each batch's decisions
+were last saved), and says how many overlapped.
+
 It also proposes a shorter dormancy window if your `winding_down` culls
 cluster at a review age, and a higher few-reviews bar from `too_small` culls.
 It stays quiet until a reason code has three cases.

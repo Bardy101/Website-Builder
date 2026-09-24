@@ -387,3 +387,48 @@ class TestFullClearsRejections(unittest.TestCase):
         b = Batch(self.batch.path)
         self.assertEqual(approved_ids(b), {"id0", "id1", "id2"})
         self.assertEqual(rejected_ids(b), set())
+
+
+class TestTuneCountsEachBusinessOnce(unittest.TestCase):
+    """A combined sheet copies its sources' businesses. Tuning across all
+    folders used to count one business in each, or as both kept and culled."""
+
+    def setUp(self):
+        import os
+
+        self.tmp = tempfile.TemporaryDirectory()
+        rows = [{"place_id": f"P{i}", "name": f"Biz {i}"} for i in range(4)]
+        self.town = Batch.create(self.tmp.name, niche="physio", area="hitchin")
+        self.town.write_shortlist(rows)
+        self.town.write_shortlist(rows[:3], path=self.town.approved_path)
+        self.town.append_rejection({"place_id": "P3", "reason": "chain", "row": rows[3]})
+        old = self.town.approved_path.stat().st_mtime - 3600
+        for path in (self.town.approved_path, self.town.rejections_path):
+            os.utime(path, (old, old))
+        # Later: the three keeps combined, and one of them culled on a second look.
+        self.combined = Batch.create(self.tmp.name, niche="combined", area="combined",
+                                     name="combined_x")
+        self.combined.write_shortlist(rows[:3])
+        self.combined.write_shortlist(rows[:2], path=self.combined.approved_path)
+        self.combined.append_rejection({"place_id": "P2", "reason": "site_fine",
+                                        "row": rows[2]})
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_latest_decision_wins_and_nothing_counts_twice(self):
+        import tune
+
+        approved, rejected, overlap = tune.gather([self.town.path, self.combined.path])
+        self.assertEqual(sorted(r["place_id"] for r in approved), ["P0", "P1"])
+        self.assertEqual(sorted((r["place_id"], r["reason"]) for r in rejected),
+                         [("P2", "site_fine"), ("P3", "chain")])
+        self.assertEqual(overlap, 3)
+
+    def test_folder_order_does_not_matter(self):
+        import tune
+
+        a = tune.gather([self.town.path, self.combined.path])
+        b = tune.gather([self.combined.path, self.town.path])
+        key = lambda rows: sorted(r["place_id"] for r in rows)  # noqa: E731
+        self.assertEqual((key(a[0]), key(a[1])), (key(b[0]), key(b[1])))

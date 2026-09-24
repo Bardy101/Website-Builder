@@ -66,22 +66,7 @@ def parse_args(argv=None):
 def main(argv=None) -> int:
     args = parse_args(argv)
 
-    approved: list[dict] = []
-    rejected: list[dict] = []
-    for folder in args.batch:
-        batch = Batch(folder)
-        if not batch.path.is_dir():
-            print(f"skipping {folder}: not a folder", file=sys.stderr)
-            continue
-        for row in batch.read_shortlist(path=batch.approved_path):
-            # The business record carries the full staleness analysis;
-            # the CSV row only its summary columns.
-            business = batch.read_business(row.get("place_id") or "") or {}
-            approved.append(_with_record(row, business))
-        for rej in batch.read_rejections():
-            row = dict(rej.get("row") or {})
-            row["reason"] = rej.get("reason")
-            rejected.append(_with_record(row, rej.get("business") or {}))
+    approved, rejected, overlap = gather(args.batch)
 
     if not rejected:
         print("No rejections recorded yet. Run cull.py first — tune.py has "
@@ -107,9 +92,65 @@ def main(argv=None) -> int:
         print(json.dumps({"comparison": comparison, "proposals": proposals}, indent=2))
     else:
         print(f"Pooled {len(approved)} approved, {len(rejected)} rejected "
-              f"across {len(args.batch)} batch folder(s).\n")
+              f"across {len(args.batch)} batch folder(s).")
+        if overlap:
+            print(f"{overlap} business(es) were judged in more than one batch (a "
+                  "combined sheet and its sources, say); each counts once, by "
+                  "your most recent decision.")
+        print()
         print(format_report(comparison, proposals))
     return 0
+
+
+def gather(folders) -> tuple[list[dict], list[dict], int]:
+    """Every keep and cull across the batches — one judgement per business.
+
+    A combined sheet holds copies of its sources' businesses, so the same
+    business can be judged in several folders. Counting each judgement
+    would weigh it twice, or count it as both kept and culled when you
+    changed your mind on the second look. The most recent decision wins:
+    a batch's decisions date from when its approved.csv / rejections.jsonl
+    were last written. Returns (approved, rejected, businesses judged more
+    than once).
+    """
+    latest: dict[str, tuple[float, str, dict]] = {}
+    anonymous: list[tuple[str, dict]] = []
+    seen_in: dict[str, int] = {}
+    for folder in folders:
+        batch = Batch(folder)
+        if not batch.path.is_dir():
+            print(f"skipping {folder}: not a folder", file=sys.stderr)
+            continue
+        stamp = max((p.stat().st_mtime for p in (batch.approved_path, batch.rejections_path)
+                     if p.is_file()), default=0.0)
+        judged: list[tuple[str, dict]] = []
+        for rej in batch.read_rejections():
+            row = dict(rej.get("row") or {})
+            row["reason"] = rej.get("reason")
+            row.setdefault("place_id", rej.get("place_id"))
+            judged.append(("rejected", _with_record(row, rej.get("business") or {})))
+        # Approvals second, so within one batch they win a tie — as in the
+        # review sheet, where approved.csv is the newer statement.
+        if batch.approved_path.is_file():
+            for row in batch.read_shortlist(path=batch.approved_path):
+                # The business record carries the full staleness analysis;
+                # the CSV row only its summary columns.
+                business = batch.read_business(row.get("place_id") or "") or {}
+                judged.append(("approved", _with_record(row, business)))
+        for kind, record in judged:
+            place_id = record.get("place_id")
+            if not place_id:
+                anonymous.append((kind, record))
+                continue
+            seen_in[place_id] = seen_in.get(place_id, 0) + 1
+            if place_id not in latest or stamp >= latest[place_id][0]:
+                latest[place_id] = (stamp, kind, record)
+
+    approved = [r for _s, kind, r in latest.values() if kind == "approved"]
+    rejected = [r for _s, kind, r in latest.values() if kind == "rejected"]
+    approved += [r for kind, r in anonymous if kind == "approved"]
+    rejected += [r for kind, r in anonymous if kind == "rejected"]
+    return approved, rejected, sum(1 for n in seen_in.values() if n > 1)
 
 
 def _with_record(row: dict, business: dict) -> dict:
