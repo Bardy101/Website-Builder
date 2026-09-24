@@ -395,7 +395,12 @@ def _prompt(brief: Brief, plan: dict) -> str:
         "staff names or testimonials. A section with no facts to fill it keeps its "
         "layout, with [placeholder] text saying what belongs there.",
         "",
-        "Structure — one page only, no blog, no CMS collections:",
+        "Build rules: static elements only. Do NOT create any CMS Collections or "
+        "Collection Lists — no blog, and no collections for services, reviews, team or "
+        "anything else. Type the services, review quotes and hours directly into the "
+        "page as ordinary text elements. One page only.",
+        "",
+        "Structure:",
         f"0. A thin banner across the very top reading: \"{brief.banner}\"",
         "1. Sticky header: business name on the left; phone number and a "
         f"'{plan['cta']}' button on the right.",
@@ -466,7 +471,10 @@ def render_html(brief: Brief, *, screenshot_uri: str = "") -> str:
         "In Webflow, start a new site with the <b>AI Site Builder</b> and paste it.",
         "Work through <b>Fill in by hand</b>: replace each [placeholder] you can.",
         f"Set the accent colour to <code>{e(brief.accent)}</code> if the builder changed it.",
-        "Keep it to one page with no CMS Collections, so the export matches the live site.",
+        "Open the <b>CMS</b> panel (the database icon on the left). If the builder made "
+        "any Collections anyway, ask the <b>AI Assistant</b>: <i>“Replace every Collection "
+        "List on this page with static elements holding the same content, then delete "
+        "the Collections.”</i> Check the panel is empty afterwards.",
     ))
     master = (
         f"Once you have a <b>{e(brief.shape)}</b> master you like, skip the AI: duplicate "

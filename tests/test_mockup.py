@@ -159,7 +159,7 @@ class TestBuildBrief(unittest.TestCase):
         prompt = mockup.build_brief(row(), record()).prompt
         self.assertIn("Use ONLY the facts below", prompt)
         self.assertIn("never invent services", prompt)
-        self.assertIn("no CMS collections", prompt)
+        self.assertIn("Do NOT create any CMS Collections or Collection Lists", prompt)
 
     def test_facts_reach_the_prompt(self):
         prompt = mockup.build_brief(row(), record()).prompt
